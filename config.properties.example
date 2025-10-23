@@ -1,0 +1,36 @@
+# Configuração de inicialização
+sync.port=9595
+
+# Intervalo da sincronização (min)
+sync.intervaloMinutos=15
+sync.tamanhoLoteEnvio=2000
+sync.tenant=teste
+
+# Aceita os valores 'true', '1' ou 'sim' para ativar saída padrão
+sync.padraoSaidaTr=true
+
+# Exemplo de configuração para envio via POST para API REST pode ser adicionados mais separando por ponto e vírgula ';'
+# METODO|ROTA|CAMINHO_JSON_XML_NFE
+sync.proxyConfig=POST|/api/nfe|txt_conteudo.xml
+sync.proxyBaseUrl=https://ws.h.dfe.mastersaf.com.br
+# Enum com opções:
+# - IGNORAR: Ignorar e seguir com arquivo original
+# - RETORNAR_ERRO: Retornar erro via API
+# - SALVAR_ERRO_E_SEGUIR: Salvar em pasta de erros e seguir com arquivo original
+sync.proxyEstrategiaErro=IGNORAR
+
+# Pastas (separe por ;)
+nfe.pastas.sincronizacao=/dados/xmls;/var/integração/pastaB
+nfe.pasta.convertido=/dados/saida
+nfe.pasta.processamento=/dados/processado
+nfe.pasta.relatorio=/dados/relatorio
+
+cte.pastas.sincronizacao=/dados/xmls;/var/integração/pastaB
+cte.pasta.convertido=/dados/saida
+cte.pasta.processamento=/dados/processado
+cte.pasta.relatorio=/dados/relatorio
+
+nfse.pastas.sincronizacao=/dados/xmls;/var/integração/pastaB
+nfse.pasta.convertido=/dados/saida
+nfse.pasta.processamento=/dados/processado
+nfse.pasta.relatorio=/dados/relatorio
