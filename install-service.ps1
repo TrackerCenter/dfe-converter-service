@@ -1,7 +1,8 @@
 <#
 Instala o serviço DFeConverter usando nssm e garante que o Java usado seja o Java local
 incluído na pasta do app (.\java\bin\java.exe). Se o nssm não existir na pasta do app,
-o script tenta baixar automaticamente. Também configura AppDirectory e logs.
+o script tenta baixar automaticamente. Também configura AppDirectory, DisplayName,
+Description e logs.
 
 Execute em PowerShell ELEVADO no diretório do instalador (ou forneça -InstallDir):
 Set-ExecutionPolicy Bypass -Scope Process -Force
@@ -11,46 +12,29 @@ Parâmetros opcionais:
   -InstallDir   Diretório onde está a app (padrão = pasta do script)
   -JarName      Nome do JAR (padrão DFe-Converter-QA.jar)
   -ConfigName   Nome do arquivo de config (padrão config.properties)
-  -ServiceName  Nome do serviço Windows (padrão DFeConverter)
+  -ServiceName  Nome do serviço Windows (padrão DFeConverterQA)
   -DisplayName  Nome exibido do serviço (padrão "DF-e Converter")
+  -Description  Descrição que aparecerá em services.msc (padrão "J2R Consultoria - Serviço de conversão de documentos fiscais para o padrão da reforma tributária.")
+  -NssmVersion  Versão do nssm a baixar (padrão 2.24)
 #>
 
 param(
     [string]$InstallDir = $PSScriptRoot,
     [string]$JarName = "DFe-Converter-QA.exe",
     [string]$ConfigName = "config.properties",
-    [string]$ServiceName = "DFeConverter",
+    [string]$ServiceName = "DFeConverterQA",
     [string]$DisplayName = "DF-e Converter",
+    [string]$Description = "J2R Consultoria - Serviço de conversão de documentos fiscais para o padrão da reforma tributária.",
     [string]$NssmVersion = "2.24"
 )
 
-function Log { param($m) "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))  $m" | Tee-Object -FilePath (Join-Path $InstallDir 'install-nssm-localjava.log') -Append }
+function Log { param($m) "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))  $m" | Tee-Object -FilePath (Join-Path $InstallDir 'script-install.log') -Append }
 
-# ===== Auto-elevate (PowerShell 5.1+ / 7) =====
-$currIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
-$principal = New-Object Security.Principal.WindowsPrincipal($currIdentity)
-if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $scriptPath = (if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Path })
-    $args = @(
-    '-NoProfile'
-    '-ExecutionPolicy', 'Bypass'
-    '-File', $scriptPath
-    )
-    $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
-    if ($pwshCmd) {
-    Start-Process -FilePath $pwshCmd.Source -ArgumentList $args -Verb RunAs
-    } else {
-    $psCmd = Get-Command powershell -ErrorAction SilentlyContinue
-    if ($psCmd) {
-    Start-Process -FilePath $psCmd.Source -ArgumentList $args -Verb RunAs
-    } else {
-    Write-Error "Nenhum executável PowerShell encontrado para relançar com privilégios."
+# Require elevation
+if (-not ([bool](net session 2>$null))) {
+    Write-Error "Execute este script em PowerShell 'Como Administrador'."
     exit 1
-    }
-    }
-    exit
 }
-# =============================================
 
 # Normalize paths
 $InstallDir = (Resolve-Path -Path $InstallDir).Path
@@ -67,6 +51,9 @@ Log "InstallDir: $InstallDir"
 Log "Jar: $jarPath"
 Log "Config: $configPath"
 Log "Local Java: $javaExe"
+Log "ServiceName: $ServiceName"
+Log "DisplayName: $DisplayName"
+Log "Description: $Description"
 
 if (-not (Test-Path $jarPath)) {
     Write-Error "JAR não encontrado: $jarPath"
@@ -150,6 +137,16 @@ $javaArgs = "-Dapp.headless=true -Djava.awt.headless=true -jar $escapedJar --syn
 Log "Instalando serviço via nssm: $nssmExe install $ServiceName $javaExe $javaArgs"
 # Install (pass the args as a single string; nssm will parse)
 & $nssmExe install $ServiceName $javaExe $javaArgs | ForEach-Object { Log $_ }
+
+# Set DisplayName and Description (if provided)
+if ($DisplayName) {
+    Log "Definindo DisplayName: $DisplayName"
+    & $nssmExe set $ServiceName DisplayName $DisplayName | ForEach-Object { Log $_ }
+}
+if ($Description) {
+    Log "Definindo Description: $Description"
+    & $nssmExe set $ServiceName Description $Description | ForEach-Object { Log $_ }
+}
 
 # Configure AppDirectory and logs
 & $nssmExe set $ServiceName AppDirectory $InstallDir | ForEach-Object { Log $_ }
