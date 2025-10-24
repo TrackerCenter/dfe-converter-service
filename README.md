@@ -42,7 +42,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
   -ConfigName "config.properties" `
   -ServiceName "DFeConverterQA" `
   -DisplayName "DF-e Converter QA" `
-  -Description "J2R Consultoria - Conversao de documentos fiscais para o padrao da reforma tributaria." `
+  -Description "J2R Consultoria - Serviço de conversão de documentos fiscais para o padrão da reforma tributária." `
   -NssmVersion "2.24"
 ```
 
