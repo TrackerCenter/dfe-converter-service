@@ -1,14 +1,4 @@
-# README — Instalar serviço DFeConverter (nssm + Java local)
-
-Este README contém instruções curtas e práticas para:
-- Executar o script PowerShell `install-service.ps1` (automático).
-- Exemplo de uso do script com parâmetros.
-- Procedimento manual (caso prefira não usar o script ou o download falhe) para criar o serviço usando `nssm.exe` já presente na pasta da aplicação.
-- Como definir a descrição do serviço de forma segura (Unicode), verificação, parada e remoção.
-
-Salve este arquivo como `README.md` e copie os trechos de comando para o PowerShell elevado conforme necessário.
-
----
+# DF-e Converter — Instalar serviço (nssm + Java local)
 
 ## 1 — Pré-requisitos
 - Windows (8/10/11 / Server) com PowerShell (5.1 ou 7+).
