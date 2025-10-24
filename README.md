@@ -1,11 +1,9 @@
 # DF-e Converter — Instalar servico (nssm + Java local)
 
-Este README foi atualizado para refletir os scripts interativos atuais:
 - `install-service.ps1` — instala o servico usando nssm (interativo).
 - `uninstall-service.ps1` — desinstala o servico (interativo), preserva pasta `java` local e remove Description automaticamente.
 
 OBS: os scripts foram ajustados para evitar problemas de encoding no console. As mensagens nos scripts utilizam caracteres ASCII (sem acentos). Salve os arquivos `.ps1` em UTF-8 with BOM para melhor compatibilidade.
-
 ---
 
 ## 1 — Pre-requisitos
