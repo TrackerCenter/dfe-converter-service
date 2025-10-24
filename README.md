@@ -139,7 +139,7 @@ Invoke-WebRequest -Uri http://localhost:8080/actuator/health -UseBasicParsing -E
 
 - Gerar thread dump (se tiver jstack/jcmd):
 ```powershell
-& "C:\Dfe-Converter\java\bin\jstack" <PID> > "C:\Dfe-Converter\jstack.txt"
+"C:\Dfe-Converter\java\bin\jstack" <PID> > "C:\Dfe-Converter\jstack.txt"
 ```
 
 ---
@@ -148,8 +148,8 @@ Invoke-WebRequest -Uri http://localhost:8080/actuator/health -UseBasicParsing -E
 
 Via nssm:
 ```powershell
-& "C:\Dfe-Converter\nssm.exe" stop DFeConverterQA
-& "C:\Dfe-Converter\nssm.exe" remove DFeConverterQA confirm
+"C:\Dfe-Converter\nssm.exe" stop DFeConverterQA
+"C:\Dfe-Converter\nssm.exe" remove DFeConverterQA confirm
 ```
 
 Via sc:
@@ -179,16 +179,16 @@ New-Item -Path "C:\Dfe-Converter\logs" -ItemType Directory -Force
 $java = "C:\Dfe-Converter\java\bin\java.exe"
 $jar  = "C:\Dfe-Converter\DFe-Converter-QA.jar"
 $args = '-Dapp.headless=true -Djava.awt.headless=true -jar "' + $jar + '" --sync.config.file="C:\Dfe-Converter\config.properties"'
-& "C:\Dfe-Converter\nssm.exe" install DFeConverterQA $java $args
+"C:\Dfe-Converter\nssm.exe" install DFeConverterQA $java $args
 ```
 5. Configure DisplayName e AppDirectory / logs:
 ```powershell
-& "C:\Dfe-Converter\nssm.exe" set DFeConverterQA DisplayName "DF-e Converter QA"
-& "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppDirectory "C:\Dfe-Converter"
-& "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStdout "C:\Dfe-Converter\logs\stdout.log"
-& "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStderr "C:\Dfe-Converter\logs\stderr.log"
-& "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppRotateFiles 1
-& "C:\Dfe-Converter\nssm.exe" set DFeConverterQA Start SERVICE_AUTO_START
+"C:\Dfe-Converter\nssm.exe" set DFeConverterQA DisplayName "DF-e Converter QA"
+"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppDirectory "C:\Dfe-Converter"
+"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStdout "C:\Dfe-Converter\logs\stdout.log"
+"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStderr "C:\Dfe-Converter\logs\stderr.log"
+"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppRotateFiles 1
+"C:\Dfe-Converter\nssm.exe" set DFeConverterQA Start SERVICE_AUTO_START
 ```
 6. Defina a descrição com segurança (registro):
 ```powershell
@@ -197,7 +197,7 @@ Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DFeConverterQA" 
 ```
 7. Inicie o serviço:
 ```powershell
-& "C:\Dfe-Converter\nssm.exe" start DFeConverterQA
+"C:\Dfe-Converter\nssm.exe" start DFeConverterQA
 ```
 8. Verifique logs e status (ver seção 5 para comandos).
 
@@ -209,17 +209,6 @@ Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DFeConverterQA" 
 - `nssm.exe` falhou/ausente: baixe manualmente de https://nssm.cc e coloque em `InstallDir`.
 - Texto com acentos na Description corrompido: salve `.ps1` em UTF‑8 com BOM e use `Set-ItemProperty` no registro.
 - Serviço entra em Running mas app não responde: ver `stderr.log`/`stdout.log` e logs da app; verificar porta configurada.
-- Para detalhes, consulte `install-nssm-localjava.log` gerado pelo script.
-
----
-
-## 9 — Checklist resumido (execução manual)
-- [ ] Copiar JAR para `C:\Dfe-Converter`
-- [ ] (Opcional) Copiar JRE para `C:\Dfe-Converter\java\bin\java.exe`
-- [ ] Colocar `nssm.exe` em `C:\Dfe-Converter` (ou permitir download)
-- [ ] Abrir PowerShell como Administrador
-- [ ] Salvar `.ps1` em UTF‑8 with BOM
-- [ ] Executar o script ou seguir o procedimento manual
-- [ ] Verificar logs e status do serviço
+- Para detalhes, consulte `nssm-install.log` gerado pelo script.
 
 ---
