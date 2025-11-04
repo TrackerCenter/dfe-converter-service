@@ -2,11 +2,15 @@
 Instala o servico DFeConverter usando nssm e garante que o Java usado seja o Java local
 incluido na pasta do app (.\java\bin\java.exe). Se o nssm nao existir na pasta do app,
 o script tenta baixar automaticamente. Tambem configura AppDirectory, DisplayName,
-Description e logs.
+Description e — opcionalmente — logs (stdout/stderr).
 
 Execute em PowerShell ELEVADO no diretorio do instalador (ou forneca -InstallDir):
 Set-ExecutionPolicy Bypass -Scope Process -Force
 .\install-service.ps1
+
+Comportamento de logs:
+- Por padrao, o redirecionamento de stdout/stderr NAO e configurado (logs DESABILITADOS).
+- Para habilitar os logs (quando necessario), passe -EnableAppLogs ao executar o script.
 
 Este script agora pergunta interativamente:
  - escolha entre QA / PROD / Outro
@@ -18,7 +22,8 @@ param(
     [string]$InstallDir = $PSScriptRoot,
     [string]$ConfigName = "config.properties",
     [string]$Description = "J2R Consultoria - Conversao de documentos fiscais para o padrao da reforma tributaria.",
-    [string]$NssmVersion = "2.24"
+    [string]$NssmVersion = "2.24",
+    [switch]$EnableAppLogs
 )
 
 # Tentar usar UTF-8 na sessao (inofensivo se nao aplicado)
@@ -107,6 +112,7 @@ Log ("Local Java: {0}" -f $javaExe)
 Log ("ServiceName: {0}" -f $ServiceName)
 Log ("DisplayName: {0}" -f $DisplayName)
 Log ("Description: {0}" -f $Description)
+if ($EnableAppLogs) { Log "Parametro -EnableAppLogs fornecido: logs de stdout/stderr SERÃO configurados." } else { Log "Por padrao logs de stdout/stderr NAO serao configurados (economia de disco)." }
 
 # ---------- Validar JAR ----------
 if (-not (Test-Path $jarPath)) {
@@ -129,10 +135,14 @@ if (-not (Test-Path $javaExe)) {
     }
 }
 
-# Create logs dir
-if (-not (Test-Path $logsDir)) {
-    New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
-    Log ("Criada pasta de logs: {0}" -f $logsDir)
+# Create logs dir only if logs are enabled
+if ($EnableAppLogs) {
+    if (-not (Test-Path $logsDir)) {
+        New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
+        Log ("Criada pasta de logs: {0}" -f $logsDir)
+    }
+} else {
+    Log "Nao criarei pasta de logs pois logs estao DESABILITADOS por padrao."
 }
 
 # Ensure TLS 1.2 for download
@@ -201,11 +211,21 @@ if ($Description) {
     & $nssmExe set $ServiceName Description $Description | ForEach-Object { Log $_ }
 }
 
-# Configure AppDirectory and logs
+# Configure AppDirectory and logs (logs only if enabled)
 & $nssmExe set $ServiceName AppDirectory $InstallDir | ForEach-Object { Log $_ }
-& $nssmExe set $ServiceName AppStdout $stdout | ForEach-Object { Log $_ }
-& $nssmExe set $ServiceName AppStderr $stderr | ForEach-Object { Log $_ }
-& $nssmExe set $ServiceName AppRotateFiles 1 | ForEach-Object { Log $_ }
+
+if ($EnableAppLogs) {
+    & $nssmExe set $ServiceName AppStdout $stdout | ForEach-Object { Log $_ }
+    & $nssmExe set $ServiceName AppStderr $stderr | ForEach-Object { Log $_ }
+    & $nssmExe set $ServiceName AppRotateFiles 1 | ForEach-Object { Log $_ }
+} else {
+    Log "AppStdout/AppStderr NAO configurados (logs DESABILITADOS)."
+    # Se preferir descartar explicitamente a saida para economizar disco e evitar crescer logs
+    # mesmo com AppStdout/AppStderr não configurados, pode usar NUL (descomente abaixo):
+    # & $nssmExe set $ServiceName AppStdout NUL | ForEach-Object { Log $_ }
+    # & $nssmExe set $ServiceName AppStderr NUL | ForEach-Object { Log $_ }
+}
+
 & $nssmExe set $ServiceName Start SERVICE_AUTO_START | ForEach-Object { Log $_ }
 
 # Start service
@@ -219,13 +239,21 @@ try {
     Log ("Service Status: {0}" -f $s.Status)
     if ($s.Status -eq 'Running') {
         Write-Host ("Servico '{0}' instalado e iniciado com sucesso." -f $DisplayName) -ForegroundColor Green
-        Write-Host ("Logs do app: {0} e {1}" -f $stdout, $stderr)
+        if ($EnableAppLogs) {
+            Write-Host ("Logs do app: {0} e {1}" -f $stdout, $stderr)
+        } else {
+            Write-Host "Logs de stdout/stderr estao DESABILITADOS por padrao; use .\install-service.ps1 -EnableAppLogs para ativar." -ForegroundColor Yellow
+        }
         Log "Servico iniciado com sucesso."
         exit 0
     } else {
         Write-Warning ("Servico instalado mas nao entrou em Running. Status: {0}" -f $s.Status)
         Log ("Servico instalado mas nao entrou em Running. Status: {0}" -f $s.Status)
-        Write-Host ("Verifique os arquivos de log em: {0} e {1}" -f $stdout, $stderr) -ForegroundColor Yellow
+        if ($EnableAppLogs) {
+            Write-Host ("Verifique os arquivos de log em: {0} e {1}" -f $stdout, $stderr) -ForegroundColor Yellow
+        } else {
+            Write-Host "Logs de stdout/stderr estao DESABILITADOS; consulte event logs do Windows ou reconfigure com -EnableAppLogs." -ForegroundColor Yellow
+        }
         exit 5
     }
 } catch {

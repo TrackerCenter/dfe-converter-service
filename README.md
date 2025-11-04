@@ -4,6 +4,12 @@
 - `uninstall-service.ps1` — desinstala o servico (interativo), preserva pasta `java` local e remove Description automaticamente.
 
 OBS: os scripts foram ajustados para evitar problemas de encoding no console. As mensagens nos scripts utilizam caracteres ASCII (sem acentos). Salve os arquivos `.ps1` em UTF-8 with BOM para melhor compatibilidade.
+
+Nota importante sobre logs
+- Por padrao o script NAO configura redirecionamento de stdout/stderr (logs DESABILITADOS) para economizar espaço em disco.
+- Se for necessario coletar logs da aplicacao, execute o instalador com o switch `-EnableAppLogs`:
+  .\install-service.ps1 -EnableAppLogs
+
 ---
 
 ## 1 — Pre-requisitos
@@ -36,8 +42,13 @@ cd C:\Dfe-Converter
 Set-ExecutionPolicy Bypass -Scope Process -Force
 ```
 4. Execute o script de instalacao:
+- Comportamento padrão (logs DESABILITADOS — recomendado para produção):
 ```powershell
 .\install-service.ps1
+```
+- Habilitar logs de stdout/stderr (quando for necessário debugar):
+```powershell
+.\install-service.ps1 -EnableAppLogs
 ```
 
 Ao executar o script ele eh interativo e ira pedir:
@@ -53,16 +64,19 @@ Exemplo de fluxo (resumo):
 
 O script fara:
 - validacoes (JAR / Java);
-- criara `logs\stdout.log` e `logs\stderr.log`;
 - tentara baixar/extrair `nssm` se nao existir localmente;
 - instalar o servico via `nssm`;
 - definir DisplayName e gravar Description (se especificado) — o Description eh escrito no registro (Unicode-safe);
-- configurar AppDirectory, logs, Start=Auto e tentar iniciar o servico;
+- configurar AppDirectory, Start=Auto e tentar iniciar o servico;
 - registrar a execucao no log `script-install.log` (no InstallDir).
 
+Se `-EnableAppLogs` for passado, o script tambem:
+- criara `logs\stdout.log` e `logs\stderr.log`;
+- configurara `AppStdout` / `AppStderr` em nssm e `AppRotateFiles 1`.
+
 Logs:
-- instalacao: `<InstallDir>\script-install.log`
-- nssm e output da aplicacao: `<InstallDir>\logs\stdout.log` e `<InstallDir>\logs\stderr.log`
+- instalacao: `<InstallDir>\script-install.log` (sempre criado)
+- nssm e output da aplicacao: `<InstallDir>\logs\stdout.log` e `<InstallDir>\logs\stderr.log` (apenas se `-EnableAppLogs` for usado)
 
 ---
 
@@ -74,7 +88,7 @@ Com valores hipoteticos:
 - Jar = `DFe-Converter-QA.jar`
 - ServiceName = `DFeConverterQA`
 
-Comandos equivalentes (para referencia):
+Comandos equivalentes (para referencia) — exemplo com logs habilitados:
 
 ```powershell
 # instalar via nssm (executavel + argumentos)
@@ -83,7 +97,7 @@ Comandos equivalentes (para referencia):
 # definir DisplayName
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA DisplayName "DF-e Converter QA"
 
-# configurar diretorio da app e logs
+# configurar diretorio da app e logs (esses dois ultimos so se habilitar logs)
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppDirectory "C:\Dfe-Converter"
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStdout "C:\Dfe-Converter\logs\stdout.log"
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStderr "C:\Dfe-Converter\logs\stderr.log"
@@ -93,6 +107,8 @@ Comandos equivalentes (para referencia):
 # iniciar o servico
 "C:\Dfe-Converter\nssm.exe" start DFeConverterQA
 ```
+
+Se preferir que a saida seja explicitamente descartada em vez de nao configurar logs, voce pode configurar `AppStdout`/`AppStderr` para `NUL` (isso evita criacao de arquivos e acumulacao de logs).
 
 ---
 
@@ -138,7 +154,7 @@ Get-CimInstance Win32_Process -Filter "name='java.exe'" |
   Select-Object ProcessId, CommandLine | Format-List
 ```
 
-- Ler logs criados por nssm:
+- Ler logs criados por nssm (somente se `-EnableAppLogs` foi usado):
 ```powershell
 Get-Content -Path "C:\Dfe-Converter\logs\stdout.log" -Tail 200 -Encoding UTF8
 Get-Content -Path "C:\Dfe-Converter\logs\stderr.log" -Tail 200 -Encoding UTF8
@@ -197,7 +213,7 @@ Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DFeConverterQ
 
 1. Copie sua aplicacao e `nssm.exe` para a pasta da app, por exemplo `C:\Dfe-Converter`.
 2. Abra PowerShell **Como Administrador**.
-3. Crie a pasta de logs:
+3. (Opcional — somente se for usar logs) Crie a pasta de logs:
 ```powershell
 New-Item -Path "C:\Dfe-Converter\logs" -ItemType Directory -Force
 ```
@@ -208,10 +224,11 @@ $jar  = "C:\Dfe-Converter\DFe-Converter-QA.jar"
 $args = '-Dapp.headless=true -Djava.awt.headless=true -jar "' + $jar + '" --sync.config.file="C:\Dfe-Converter\config.properties"'
 "C:\Dfe-Converter\nssm.exe" install DFeConverterQA $java $args
 ```
-5. Configure DisplayName e AppDirectory / logs:
+5. Configure DisplayName e AppDirectory / logs (logs somente se desejar):
 ```powershell
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA DisplayName "DF-e Converter QA"
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppDirectory "C:\Dfe-Converter"
+# Somente se quiser logs:
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStdout "C:\Dfe-Converter\logs\stdout.log"
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStderr "C:\Dfe-Converter\logs\stderr.log"
 "C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppRotateFiles 1
@@ -230,7 +247,7 @@ $args = '-Dapp.headless=true -Djava.awt.headless=true -jar "' + $jar + '" --sync
 - Script nao encontrou `java`: coloque JRE em `.\java\bin\java.exe` ou instale Java no sistema (`where java`).
 - `nssm.exe` ausente/falha: baixe manualmente de https://nssm.cc e coloque em `InstallDir`.
 - Texto com acentos corrompido em consoles antigos: salve `.ps1` em UTF-8 with BOM; se persistir, remova acentos nos textos do script (os scripts fornecidos usam mensagens ASCII).
-- Servico entra em Running mas app nao responde: ver `stderr.log`/`stdout.log` e logs da app; verificar configuracao de porta.
+- Servico entra em Running mas app nao responde: ver `stderr.log`/`stdout.log` (se habilitado) e logs da app; verificar configuracao de porta.
 - Para detalhes, consulte `script-install.log` e `uninstall-nssm-localjava.log` no `InstallDir`.
 
 ---
@@ -241,7 +258,6 @@ $args = '-Dapp.headless=true -Djava.awt.headless=true -jar "' + $jar + '" --sync
 - [ ] Colocar `nssm.exe` em `C:\Dfe-Converter` (ou permitir download pelo script)
 - [ ] Abrir PowerShell como Administrador
 - [ ] Salvar `.ps1` em UTF-8 with BOM
-- [ ] Executar `.\install-service.ps1` e responder as perguntas interativas
-- [ ] Verificar status e logs
-
----
+- [ ] Executar `.\install-service.ps1` (por padrao logs DESABILITADOS)  
+  - Use `.\install-service.ps1 -EnableAppLogs` para ativar os logs de stdout/stderr quando necessario
+- [ ] Verificar status e logs (se habilitados)
