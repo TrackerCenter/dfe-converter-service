@@ -68,7 +68,7 @@ function PromptWithDefault([string]$prompt, [string]$default) {
 $envChoice = Read-EnvChoice
 
 if ($envChoice -eq 'QA') {
-    $defaultJar = "DFe-Converter-QA.jar"
+    $defaultJar = "DFe-Converter-QA.exe"
     $defaultService = "DFeConverterQA"
     $defaultDisplay = "DF-e Converter QA"
     Write-Host "Ambiente selecionado: QA"
@@ -77,7 +77,7 @@ if ($envChoice -eq 'QA') {
     $DisplayName = PromptWithDefault "DisplayName (nome exibido em Services.msc)" $defaultDisplay
 }
 elseif ($envChoice -eq 'PROD') {
-    $defaultJar = "DFe-Converter-PROD.jar"
+    $defaultJar = "DFe-Converter-PROD.exe"
     $defaultService = "DFeConverterPROD"
     $defaultDisplay = "DF-e Converter PROD"
     Write-Host "Ambiente selecionado: PROD"
