@@ -93,8 +93,8 @@ function Normalize-ServiceName {
     $decomposed = $name. Normalize($nf)
     $sb = New-Object System.Text.StringBuilder
     foreach ($c in $decomposed. ToCharArray()) {
-        $cat = [System. Globalization.CharUnicodeInfo]::GetUnicodeCategory($c)
-        if ($cat -ne [System. Globalization.UnicodeCategory]::NonSpacingMark) {
+        $cat = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($c)
+        if ($cat -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
             [void]$sb.Append($c)
         }
     }
