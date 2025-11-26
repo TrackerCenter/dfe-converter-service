@@ -1,6 +1,5 @@
 <#
 dfe-setup.ps1 - Menu interativo para instalar/remover/reinstalar (Windows)
-Versao: 1. 0.0
 Execute em PowerShell como Administrador.
 #>
 [CmdletBinding()]
@@ -42,9 +41,9 @@ function Ensure-Elevated {
         Write-Host "Reexecutando em modo Administrador..." -ForegroundColor Yellow
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)
-        if ($pwsh) { $psi.FileName = $pwsh.Source } else { $psi.FileName = (Get-Command powershell). Source }
-        $psi. Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-        $psi. Verb = "runas"
+        if ($pwsh) { $psi.FileName = $pwsh.Source } else { $psi.FileName = (Get-Command powershell).Source }
+        $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        $psi.Verb = "runas"
         try {
             [System.Diagnostics.Process]::Start($psi) | Out-Null
             exit
@@ -90,15 +89,15 @@ function Normalize-ServiceName {
     param([string]$name)
     if ([string]::IsNullOrWhiteSpace($name)) { return "" }
     $nf = [System.Text.NormalizationForm]::FormD
-    $decomposed = $name. Normalize($nf)
+    $decomposed = $name.Normalize($nf)
     $sb = New-Object System.Text.StringBuilder
-    foreach ($c in $decomposed. ToCharArray()) {
+    foreach ($c in $decomposed.ToCharArray()) {
         $cat = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($c)
         if ($cat -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
             [void]$sb.Append($c)
         }
     }
-    $recomposed = $sb.ToString(). Normalize([System.Text.NormalizationForm]::FormC)
+    $recomposed = $sb.ToString().Normalize([System.Text.NormalizationForm]::FormC)
     $noSpace = $recomposed -replace '\s+', ''
     $chars = $noSpace.ToCharArray() | ForEach-Object {
         if ($_ -match '[A-Za-z0-9\-_]') { $_ } else { '' }
@@ -182,7 +181,7 @@ function Do-Status {
         Write-Host "==========================================================" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "Nome          : $($svc.Name)"
-        Write-Host "DisplayName   : $($svc. DisplayName)"
+        Write-Host "DisplayName   : $($svc.DisplayName)"
         $statusColor = if($svc.Status -eq 'Running'){'Green'}else{'Red'}
         Write-Host "Status        : $($svc.Status)" -ForegroundColor $statusColor
         Write-Host "StartType     : $($svc.StartType)"
