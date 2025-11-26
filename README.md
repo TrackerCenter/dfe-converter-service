@@ -6,43 +6,79 @@ Arquivos principais
 - dfe-setup.sh        — Menu interativo (Linux)
 - dfe-install.sh      — Instalador idempotente (Linux)
 - dfe-uninstall.sh    — Desinstalador (Linux)
+- dfe-bootstrap.sh    — Bootstrap para dependências (Linux: instala/valida `jq`)
 - dfe-setup.ps1       — Menu interativo (Windows)
 - dfe-install.ps1     — Instalador (Windows, usa nssm)
 - dfe-uninstall.ps1   — Desinstalador (Windows)
-- .dfe-setup.json     — arquivo de estado gerado dentro de cada INSTALL_DIR (ex.: `<INSTALL_DIR>/.dfe-setup.json`)
+- `<INSTALL_DIR>/.dfe-setup.json` — arquivo de estado gerado por instalação (ex.: `/opt/.../.dfe-setup.json`)
 
 Visão geral
 - Cada instalação grava/atualiza um arquivo JSON em `<INSTALL_DIR>/.dfe-setup.json` contendo uma lista `installations` com as entradas daquela pasta.
 - Isso permite múltiplas configurações/serviços e possibilita que o desinstalador remova apenas a entrada correspondente.
-- O menu (`dfe-setup.*`) apenas orquestra (invoca instalador/desinstalador); você pode também usar os scripts `dfe-install*` / `dfe-uninstall*` de forma standalone.
+- O menu (`dfe-setup.*`) orquestra (invoca instalador/desinstalador); os scripts `dfe-install*` / `dfe-uninstall*` podem ser usados standalone.
 
 Requisitos (geral)
 - Linux:
     - systemd (para gerenciamento de serviços).
-    - utilitários padrão: bash, coreutils, cp, chmod, chown, systemctl, sha256sum/cmp, python3 (ou python).
-    - executar como root (sudo).
+    - utilitários padrão: bash, coreutils, cp, chmod, chown, systemctl, sha256sum/cmp, curl/wget.
+    - `jq` é necessário para manipular o JSON local; o `dfe-bootstrap.sh` tenta instalar `jq` automaticamente se ausente.
+    - executar como root (sudo) para operações que alteram o sistema.
 - Windows:
     - PowerShell (preferível PowerShell 7+), privilégios Administrador.
-    - nssm será baixado automaticamente se necessário (requer acesso à internet) ou você pode colocá-lo em `InstallDir\nssm.exe`.
+    - `nssm` será baixado automaticamente se necessário (requer acesso à internet) ou você pode colocá-lo em `InstallDir\nssm.exe`.
     - A execução do PowerShell deve permitir scripts (ExecutionPolicy Bypass ao invocar diretamente).
 
+Observação sobre Python
+- Os scripts Linux foram atualizados para usar `jq` (não dependem de `python3` para manipular o JSON). No Windows, PowerShell usa JSON nativo.
+
+Raw URLs e robustez
+- Para baixar scripts diretamente do GitHub raw há duas formas que funcionam:
+    - padrão comum:  
+      `https://raw.githubusercontent.com/<owner>/<repo>/<branch>/scripts/<file>`
+    - alternativa observada (equivalente):  
+      `https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/scripts/<file>`
+- Recomendações:
+    - Para produção/automatização prefira apontar para um commit SHA ou tag (imutabilidade). Exemplo:
+      `https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/<COMMIT_SHA>/scripts/dfe-setup.sh`
+    - Os scripts `dfe-setup.sh` e `dfe-setup.ps1` suportam a variável de ambiente `DFESCRIPTS_RAW_BASE` para sobrescrever a base raw (útil para apontar para um commit/tag ou mirror interno). Exemplo:
+      `export DFESCRIPTS_RAW_BASE="https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/<COMMIT_SHA>/scripts"`
+
 Exemplos de execução (one-liners)
-- Linux (executa o menu baixando o script raw do GitHub):
+- Linux (menu, padrão):
   ```bash
   sudo bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/main/scripts/dfe-setup.sh)
   ```
-  Observação: assegure que a URL aponte para a branch correta (ex.: `main`).
+    - Se o raw do seu repositório estiver exposto via `refs/heads` (caso que você encontrou), também funciona:
+  ```bash
+  sudo bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts/dfe-setup.sh)
+  ```
+    - Para garantir imutabilidade usando um commit SHA:
+  ```bash
+  sudo bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/<COMMIT_SHA>/scripts/dfe-setup.sh)
+  ```
+    - Rodar sem prompts para instalação automática de `jq`:
+  ```bash
+  sudo AUTO_INSTALL_JQ=1 bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/main/scripts/dfe-setup.sh)
+  ```
 
-- Windows (execute em PowerShell como Administrador):
+- Windows (PowerShell, execute como Administrador):
   ```powershell
   iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/main/scripts/dfe-setup.ps1')
   ```
-  Observação: este comando baixa e executa o script remoto — adote verificações/assinaturas em ambiente sensível.
+    - Alternativa com refs/heads:
+  ```powershell
+  iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts/dfe-setup.ps1')
+  ```
+    - Usando uma base raw específica (commit/tag) via variável de ambiente no PowerShell:
+  ```powershell
+  $env:DFESCRIPTS_RAW_BASE = 'https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/<COMMIT_SHA>/scripts'
+  iex (New-Object Net.WebClient).DownloadString("$env:DFESCRIPTS_RAW_BASE/dfe-setup.ps1")
+  ```
 
 Uso manual (Linux)
 1. Dê permissão de execução:
    ```bash
-   chmod +x dfe-setup.sh dfe-install.sh dfe-uninstall.sh
+   chmod +x dfe-setup.sh dfe-install.sh dfe-uninstall.sh dfe-bootstrap.sh
    ```
 2. Executar o menu:
    ```bash
@@ -83,7 +119,7 @@ Uso manual (Windows)
    ```
 
 Arquivo de estado: `<INSTALL_DIR>/.dfe-setup.json`
-- Local: cada instalação grava seu arquivo em `<INSTALL_DIR>/.dfe-setup.json` (visível e de fácil acesso como você solicitou).
+- Local: cada instalação grava seu arquivo em `<INSTALL_DIR>/.dfe-setup.json` (visível e de fácil acesso).
 - Estrutura:
   ```json
   {
@@ -109,9 +145,31 @@ Arquivo de estado: `<INSTALL_DIR>/.dfe-setup.json`
 
 Permissões e segurança
 - O arquivo `.dfe-setup.json` fica em local acessível por design. Para proteção:
-    - No Linux deixe o diretório de instalação com permissões corretas (por exemplo: dono `root` ou usuário do serviço; modo 0755 para o diretório e 0640 para o arquivo, se quiser restringir leitura).
+    - No Linux deixe o diretório de instalação com permissões corretas (por exemplo: dono `root` ou usuário do serviço; modo 0755 para o diretório e 0640 para o arquivo se quiser restringir leitura).
     - No Windows use `C:\Program Files\...` ou `C:\ProgramData\...` e ajuste ACLs se necessário.
-- One-liners executam código remoto. Em ambientes sensíveis, prefira baixar os arquivos, verificar hash e inspecionar antes de executar.
+- One-liners executam código remoto. Em ambientes sensíveis, prefira:
+    - baixar os scripts, verificar hash/assinatura e inspecionar antes de executar; ou
+    - usar `DFESCRIPTS_RAW_BASE` apontando para um commit SHA testado.
+
+Bootstrap e `jq`
+- O script `dfe-bootstrap.sh` garante que `jq` (necessário nos scripts Linux) esteja disponível:
+    - tenta detectar package manager e executar a instalação (interativo por padrão);
+    - faz fallback para baixar o binário oficial do GitHub (ou instalar localmente em `~/.local/bin` se sem privilégio root);
+    - para automação/CI use `AUTO_INSTALL_JQ=1` para instalar sem prompt:
+      ```bash
+      sudo AUTO_INSTALL_JQ=1 ./dfe-setup.sh
+      ```
+    - se preferir instalar `jq` manualmente, exemplos:
+      ```bash
+      # Debian/Ubuntu
+      sudo apt-get update && sudo apt-get install -y jq
+  
+      # Alpine
+      sudo apk add --no-cache jq
+  
+      # RHEL/CentOS (dnf/yum)
+      sudo dnf install -y jq
+      ```
 
 Opções e flags importantes
 - dfe-install.sh:

@@ -1,5 +1,5 @@
 <#
-dfe-install.ps1 - Instalador de serviço Windows (usa nssm se necessario).
+dfe-install.ps1 - Instalador de service Windows (usa nssm se necessario).
 Adaptado do seu install-service.ps1 original. Ao final grava <InstallDir>\.dfe-setup.json
 Execute em PowerShell ELEVADO no diretorio do instalador ou forneca -InstallDir.
 #>

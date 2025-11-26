@@ -31,7 +31,7 @@ Uso: sudo $0 [--yes] [--install-dir PATH] [--jar-source PATH] [--config-source P
 --install-dir    Diretório de instalação (ex: /opt/DFE_CONVERTER_QA)
 --jar-source     Caminho para o JAR de origem (obrigatório se não houver JAR no dir atual)
 --config-source  Caminho para config.properties (opcional)
---no-start       Não iniciar/ativar o serviço após instalar
+--no-start       Não iniciar/ativar o service após instalar
 --force          Sobrescrever unit/env sem perguntar
 -h, --help       Mostra essa ajuda
 EOF
@@ -98,9 +98,9 @@ ask_yesno() {
   done
 }
 
-SERVICE_NAME="$(ask_default 'Nome do serviço (systemd unit)' "$DEFAULT_SERVICE")"
+SERVICE_NAME="$(ask_default 'Nome do service (systemd unit)' "$DEFAULT_SERVICE")"
 SERVICE_NAME="${SERVICE_NAME%.service}"
-USER_NAME="$(ask_default 'Usuário do sistema para rodar o serviço' "$DEFAULT_USER")"
+USER_NAME="$(ask_default 'Usuário do sistema para rodar o service' "$DEFAULT_USER")"
 GROUP_NAME="$USER_NAME"
 INSTALL_DIR="$(ask_default 'Diretório de instalação' "${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}")"
 

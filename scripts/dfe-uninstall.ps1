@@ -1,5 +1,5 @@
 <#
-dfe-uninstall.ps1 - Desinstalador para serviços instalados via dfe-install.ps1 (nssm/sc fallback)
+dfe-uninstall.ps1 - Desinstalador para services instalados via dfe-install.ps1 (nssm/sc fallback)
 Uso: execute em PowerShell Administrador. Opcional: passe -InstallDir para atualizar o .dfe-setup.json naquele local.
 #>
 param(
