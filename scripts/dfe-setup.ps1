@@ -49,7 +49,7 @@ function Get-RemoteBaseCandidates {
         $owner = "TrackerCenter"
         $repo  = "dfe-converter-service"
         $branch = "main"
-        $base1 = "https://raw.githubusercontent.com/$owner/$repo/$branch/scripts"
+        $base1 = "https://raw.githubusercontent.com/$owner/$repo/refs/heads/$branch/scripts"
         $base2 = "https://raw.githubusercontent.com/$owner/$repo/refs/heads/$branch/scripts"
         return @($base1, $base2)
     }
