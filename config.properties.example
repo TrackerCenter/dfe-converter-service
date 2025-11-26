@@ -6,8 +6,11 @@ sync.intervaloMinutos=15
 sync.tamanhoLoteEnvio=2000
 sync.tenant=teste
 
-# Aceita os valores 'true', '1' ou 'sim' para ativar saída padrão
+# Aceita os valores 'true', '1' ou 'sim' para ativar saída padrão, caso contrário é considerado como 'desativado'
 sync.padraoSaidaTr=true
+sync.ignorarTagsReformaTributaria=true
+sync.proxySalvarArquivoOriginal=true
+sync.proxySalvarArquivoConvertido=true
 
 # Exemplo de configuração para envio via POST para API REST pode ser adicionados mais separando por ponto e vírgula ';'
 # METODO|ROTA|CAMINHO_JSON_XML_NFE
@@ -24,6 +27,8 @@ nfe.pastas.sincronizacao=/dados/xmls;/var/integração/pastaB
 nfe.pasta.convertido=/dados/saida
 nfe.pasta.processamento=/dados/processado
 nfe.pasta.relatorio=/dados/relatorio
+# Aceita os valores 'true', '1' ou 'sim' para ativar saída padrão, caso contrário é considerado como 'desativado'
+nfe.criarTagVNFTot=true
 
 cte.pastas.sincronizacao=/dados/xmls;/var/integração/pastaB
 cte.pasta.convertido=/dados/saida
