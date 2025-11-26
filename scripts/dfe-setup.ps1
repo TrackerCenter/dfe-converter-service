@@ -32,8 +32,8 @@ if ([string]::IsNullOrWhiteSpace($ScriptPath)) {
 
 function Ensure-Elevated {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($id)
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    $principal = New-Object System.Security.Principal.WindowsPrincipal($id)
+    if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Host "Reexecutando em modo Administrador..."
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)
@@ -65,7 +65,6 @@ function Download-ScriptToTemp {
 
 function Convert-WindowsPathToBash($winPath, $bashPath) {
     # Converte "C:\Users\..." -> "/c/Users/..." (funciona para Git Bash / MSYS)
-    # Para WSL (wsl.exe) preferiria /mnt/c/..., mas usuário pode ajustar RUN_LINUX_BOOTSTRAP caso use WSL.
     if ($winPath -match '^[A-Za-z]:(\\|/)') {
         $drive = $winPath.Substring(0,1).ToLower()
         $rest = $winPath.Substring(2) -replace '\\','/'
@@ -80,7 +79,7 @@ function Run-LinuxBootstrapSafe {
     # Por padrao NaO executamos .sh no Windows; usar RUN_LINUX_BOOTSTRAP=1 se realmente deseja.
     if ($env:RUN_LINUX_BOOTSTRAP -ne '1') {
         Write-Host "Bootstrap presente em $BootstrapPath, mas por padrao NaO executarei scripts .sh no Windows."
-        Write-Host "Se realmente deseja executar o bootstrap (requer bash configurado), defina:"
+        Write-Host 'Se realmente deseja executar o bootstrap (requer bash configurado), defina:'
         Write-Host '  $env:RUN_LINUX_BOOTSTRAP = "1"'
         return $false
     }
@@ -124,87 +123,35 @@ function Invoke-TempPS1 {
     }
 }
 
-function Invoke-TempSH {
-    param([string]$TempPath)
-    try {
-        $ran = Run-LinuxBootstrapSafe -BootstrapPath $TempPath
-        # se Run-LinuxBootstrapSafe já executou o arquivo (quando RUN_LINUX_BOOTSTRAP=1), ele cuida de remoçao
-    } finally {
-        if (Test-Path $TempPath) { Remove-Item -Force $TempPath -ErrorAction SilentlyContinue }
+# --------- Normalizer: remove acentos e caracteres especiais ----------
+function Normalize-ServiceName {
+    param([string]$name)
+    if ([string]::IsNullOrWhiteSpace($name)) { return "" }
+
+    # Decompose (FormD) and remove non-spacing marks (diacritics)
+    $nf = [System.Text.NormalizationForm]::FormD
+    $decomposed = $name.Normalize($nf)
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($c in $decomposed.ToCharArray()) {
+        $cat = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($c)
+        if ($cat -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
+            [void]$sb.Append($c)
+        }
     }
+    $recomposed = $sb.ToString().Normalize([System.Text.NormalizationForm]::FormC)
+
+    # Replace whitespace with nothing and remove any character not in A-Z a-z 0-9 - _
+    $noSpace = $recomposed -replace '\s+', ''
+    $chars = $noSpace.ToCharArray() | ForEach-Object {
+        if ($_ -match '[A-Za-z0-9\-_]') { $_ } else { '' }
+    }
+    return -join $chars
 }
 
-# ---------- Menu and actions ----------
-function Read-Menu {
+function Read-ServiceChoice {
+    while ($true) {
     Write-Host ""
-    Write-Host "=== DFe Converter Setup (Windows) ==="
-    Write-Host "1) Instalar service"
-    Write-Host "2) Remover service"
-    Write-Host "3) Reinstalar (remove -> install)"
-    Write-Host "4) Status do service"
-    Write-Host "5) Sair"
-    $choice = Read-Host "Escolha (1-5)"
-    return $choice
-}
-
-function Do-Install {
-    # Prioriza script local no mesmo diretório; se nao existir, baixa do raw base
-    $local = Join-Path $ScriptDir $InstallScriptName
-    if (Test-Path $local) {
-        Invoke-TempPS1 -TempPath $local
-        return
-    }
-    $tmp = Download-ScriptToTemp -Name $InstallScriptName
-    if (-not $tmp) { Write-Error "Nao foi possivel obter $InstallScriptName"; return }
-    Invoke-TempPS1 -TempPath $tmp
-}
-
-function Do-Uninstall {
-    $local = Join-Path $ScriptDir $UninstallScriptName
-    if (Test-Path $local) {
-        Invoke-TempPS1 -TempPath $local
-        return
-    }
-    $tmp = Download-ScriptToTemp -Name $UninstallScriptName
-    if (-not $tmp) { Write-Error "Nao foi possivel obter $UninstallScriptName"; return }
-    Invoke-TempPS1 -TempPath $tmp
-}
-
-# Entrypoint
-Ensure-Elevated
-
-# Tenta obter e (opcionalmente) executar bootstrap.sh se presente/remoto
-$bootstrapLocal = Join-Path $ScriptDir $BootstrapName
-if (Test-Path $bootstrapLocal) {
-    $bpath = $bootstrapLocal
-} else {
-    $bpath = Download-ScriptToTemp -Name $BootstrapName
-}
-
-if ($bpath) {
-    # NOTA: por padrao NaO executa; veja RUN_LINUX_BOOTSTRAP
-    $ok = Run-LinuxBootstrapSafe -BootstrapPath $bpath
-    if (-not $ok) {
-        Write-Warning "O bootstrap nao foi executado (comportamento esperado em Windows ou quando RUN_LINUX_BOOTSTRAP nao habilitado)."
-    } else {
-        Write-Host "Bootstrap executado com sucesso."
-    }
-    # cleanup bootstrap file (se baixado)
-    if ($bpath -like "$env:TEMP\*") {
-        if (Test-Path $bpath) { Remove-Item -Force $bpath -ErrorAction SilentlyContinue }
-    }
-} else {
-    Write-Host "dfe-bootstrap.sh nao encontrado localmente e download falhou (se necessário, coloque dfe-bootstrap.sh em $ScriptDir)."
-}
-
-while ($true) {
-    $opt = Read-Menu
-    switch ($opt) {
-        '1' { Do-Install; break }
-        '2' { Do-Uninstall; break }
-        '3' { Do-Uninstall; Do-Install; break }
-        '4' { $s = Read-Host "Nome do service para checar"; if ($s) { Get-Service -Name $s -ErrorAction SilentlyContinue | Format-List * } ; break }
-        '5' { Write-Host "Saindo."; exit 0 }
-        default { Write-Host "Opcao invalida." }
-    }
-}
+    Write-Host "Escolha o serviço para checar:"
+    Write-Host "  1) DFeConverterQA"
+    Write-Host "  2) DFeConverterPROD"
+    Write-Host "
