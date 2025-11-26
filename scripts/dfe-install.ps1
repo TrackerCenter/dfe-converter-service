@@ -37,13 +37,13 @@ function Read-EnvChoice {
             '1' { return 'QA' }
             '2' { return 'PROD' }
             '3' { return 'OTHER' }
-            default { Write-Host "Opcao invalida. Tente novamente." }
+            default { Write-Host "Opcao invalida.  Tente novamente." }
         }
     }
 }
 function PromptWithDefault([string]$prompt, [string]$default) {
     $r = Read-Host "$prompt [$default]"
-    if ([string]::IsNullOrWhiteSpace($r)) { return $default } else { return $r.Trim() }
+    if ([string]::IsNullOrWhiteSpace($r)) { return $default } else { return $r. Trim() }
 }
 
 $envChoice = Read-EnvChoice
@@ -69,20 +69,20 @@ elseif ($envChoice -eq 'PROD') {
 else {
     Write-Host "Ambiente selecionado: Outro"
     $JarName = Read-Host "Digite o nome do JAR (ex.: DFe-Converter-QA.jar)"
-    if ([string]::IsNullOrWhiteSpace($JarName)) { Write-Host "Nome do JAR obrigatorio. Abortando."; exit 2 }
+    if ([string]::IsNullOrWhiteSpace($JarName)) { Write-Host "Nome do JAR obrigatorio.  Abortando. "; exit 2 }
     $ServiceName = Read-Host "Digite o ServiceName (nome do servico Windows)"
     if ([string]::IsNullOrWhiteSpace($ServiceName)) { Write-Host "ServiceName obrigatorio. Abortando."; exit 2 }
     $DisplayName = Read-Host "Digite o DisplayName (nome exibido em Services.msc)"
-    if ([string]::IsNullOrWhiteSpace($DisplayName)) { Write-Host "DisplayName obrigatorio. Abortando."; exit 2 }
+    if ([string]::IsNullOrWhiteSpace($DisplayName)) { Write-Host "DisplayName obrigatorio. Abortando. "; exit 2 }
 }
 
 $javaExe = Join-Path $InstallDir "java\bin\java.exe"
 $jarPath = Join-Path $InstallDir $JarName
 $configPath = Join-Path $InstallDir $ConfigName
-$nssmExe = Join-Path $InstallDir "nssm.exe"
+$nssmExe = Join-Path $InstallDir "nssm. exe"
 $logsDir = Join-Path $InstallDir "logs"
-$stdout = Join-Path $logsDir "stdout.log"
-$stderr = Join-Path $logsDir "stderr.log"
+$stdout = Join-Path $logsDir "stdout. log"
+$stderr = Join-Path $logsDir "stderr. log"
 
 Log "Start nssm-install"
 Log ("InstallDir: {0}" -f $InstallDir)
@@ -101,11 +101,11 @@ if (-not (Test-Path $jarPath)) {
 }
 
 if (-not (Test-Path $javaExe)) {
-    Log ("Java local nao encontrado em {0}. Tentando usar 'java' do PATH." -f $javaExe)
+    Log ("Java local nao encontrado em {0}.  Tentando usar 'java' do PATH." -f $javaExe)
     $cmd = Get-Command java -ErrorAction SilentlyContinue
     if ($cmd) { $javaExe = $cmd.Source } else { $javaExe = $null }
     if (-not $javaExe) {
-        Write-Error "java nao encontrado localmente nem no PATH. Coloque a JRE em $InstallDir\java ou instale a JRE no sistema."
+        Write-Error "java nao encontrado localmente nem no PATH.  Coloque a JRE em $InstallDir\java ou instale a JRE no sistema."
         Log "java nao encontrado. Abortando."
         exit 3
     } else {
@@ -121,7 +121,7 @@ try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::
 
 # download nssm if missing (same logic)
 if (-not (Test-Path $nssmExe)) {
-    Log ("nssm.exe nao encontrado em {0}. Tentando baixar nssm-{1}.zip..." -f $InstallDir, $NssmVersion)
+    Log ("nssm.exe nao encontrado em {0}. Tentando baixar nssm-{1}. zip..." -f $InstallDir, $NssmVersion)
     $zipUrl = "https://nssm.cc/release/nssm-$NssmVersion.zip"
     $tmpZip = Join-Path $env:TEMP "nssm-$NssmVersion.zip"
     try {
@@ -135,7 +135,7 @@ if (-not (Test-Path $nssmExe)) {
         }
         if ($candidate -and (Test-Path $candidate)) {
             Copy-Item -Path $candidate -Destination $nssmExe -Force
-            Log ("nssm.exe copiado para {0}" -f $nssmExe)
+            Log ("nssm. exe copiado para {0}" -f $nssmExe)
         } else {
             Write-Error "Nao encontrei nssm.exe dentro do zip. Baixe manualmente e coloque em $InstallDir"
             Log "Falha ao localizar nssm.exe no ZIP."
@@ -166,7 +166,7 @@ try {
 
 $escapedJar = '"' + $jarPath + '"'
 $escapedConfig = '"' + $configPath + '"'
-$javaArgs = "-Dapp.headless=true -Djava.awt.headless=true -jar $escapedJar --sync.config.file=$escapedConfig"
+$javaArgs = "-Dapp.headless=true -Djava.awt.headless=true -jar $escapedJar --sync. config. file=$escapedConfig"
 
 Log ("Instalando servico via nssm: {0} install {1} {2} {3}" -f $nssmExe, $ServiceName, $javaExe, $javaArgs)
 & $nssmExe install $ServiceName $javaExe $javaArgs | ForEach-Object { Log $_ }
@@ -198,11 +198,11 @@ Start-Sleep -Seconds 3
 
 try {
     $s = Get-Service -Name $ServiceName -ErrorAction Stop
-    if ($s.Status -eq 'Running') {
+    if ($s. Status -eq 'Running') {
         Write-Host ("Servico '{0}' instalado e iniciado com sucesso." -f $DisplayName) -ForegroundColor Green
         Log "Servico iniciado com sucesso."
     } else {
-        Write-Warning ("Servico instalado mas nao entrou em Running. Status: {0}" -f $s.Status)
+        Write-Warning ("Servico instalado mas nao entrou em Running. Status: {0}" -f $s. Status)
         Log ("Servico instalado mas nao entrou em Running. Status: {0}" -f $s.Status)
     }
 } catch {
@@ -222,12 +222,12 @@ function Add-OrUpdate-InstallRecord {
     $existsIndex = $null
     for ($i=0; $i -lt $data.installations.Count; $i++) {
         $ent = $data.installations[$i]
-        if ($ent.serviceName -eq $record.serviceName -or $ent.jarName -eq $record.jarName) { $existsIndex = $i; break }
+        if ($ent. serviceName -eq $record.serviceName -or $ent.jarName -eq $record.jarName) { $existsIndex = $i; break }
     }
     if ($existsIndex -ne $null) {
         $data.installations[$existsIndex] = $record
     } else {
-        $data.installations += $record
+        $data. installations += $record
     }
     $data | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 -Path $cfgPath
     Write-Host "JSON state gravado em: $cfgPath"
@@ -236,7 +236,15 @@ function Add-OrUpdate-InstallRecord {
 $cfgPath = Join-Path $InstallDir ".dfe-setup.json"
 $installedBy = $env:USERNAME
 $installedAt = (Get-Date).ToString("o")
-$javaPathUsed = (Get-Command java -ErrorAction SilentlyContinue)?.Source
+
+# CORRIGIDO: compatibilidade com PowerShell 5.1
+$javaCmd = Get-Command java -ErrorAction SilentlyContinue
+if ($javaCmd) {
+    $javaPathUsed = $javaCmd. Source
+} else {
+    $javaPathUsed = $null
+}
+
 $record = @{
     serviceName = $ServiceName
     jarName = $JarName
