@@ -1,19 +1,15 @@
 #!/usr/bin/env bash
-# dfe-setup.sh - Menu interativo para instalar / remover / reinstalar (Linux)
-# Versao: 1. 0.0
-# Baixa scripts do GitHub ou usa locais e executa bootstrap antes de prosseguir.
-# Execute como root (sudo).
+# dfe-setup.sh - Menu interativo (Linux)
+# Versao: 1.0.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-# ---------- Versao do Script ----------
 SCRIPT_VERSION="1.0. 0"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAW_BASE="${DFESCRIPTS_RAW_BASE:-https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts}"
 
-BOOTSTRAP_NAME="dfe-bootstrap. sh"
+BOOTSTRAP_NAME="dfe-bootstrap.sh"
 INSTALL_SCRIPT_NAME="dfe-install.sh"
 UNINSTALL_SCRIPT_NAME="dfe-uninstall.sh"
 
@@ -22,46 +18,44 @@ log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 show_banner() {
   clear
   echo ""
-  echo "╔════════════════════════════════════════════════════════╗"
-  echo "║                                                        ║"
-  echo "║           DF-e Converter - Setup (Linux)              ║"
-  echo "║                                                        ║"
-  echo "║                   Versao: $SCRIPT_VERSION                      ║"
-  echo "║                                                        ║"
-  echo "║              J2R Consultoria Informatica               ║"
-  echo "║                                                        ║"
-  echo "╚════════════════════════════════════════════════════════╝"
+  echo "=========================================================="
+  echo "                                                          "
+  echo "           DF-e Converter - Setup (Linux)                "
+  echo "                                                          "
+  echo "                   Versao: $SCRIPT_VERSION                "
+  echo "                                                          "
+  echo "              J2R Consultoria Informatica                 "
+  echo "                                                          "
+  echo "=========================================================="
   echo ""
 }
 
 ensure_root() {
   if [[ $EUID -ne 0 ]]; then
-    echo "ERRO: execute este script como root (sudo)."
+    echo "ERRO: execute como root (sudo)"
     exit 1
   fi
 }
 
-download_script_to_temp() {
+download_script() {
   local name="$1"
   local url="${RAW_BASE}/${name}"
   local dest
-  dest="$(mktemp /tmp/"${name}. XXXXXX")"
+  dest="$(mktemp /tmp/${name}.XXXXXX)"
 
-  log "Baixando $url -> $dest"
+  log "Baixando $url"
   if command -v curl >/dev/null 2>&1; then
     if !  curl -fsSL "$url" -o "$dest"; then
       rm -f "$dest"
-      log "Falha ao baixar via curl: $url"
       return 1
     fi
   elif command -v wget >/dev/null 2>&1; then
     if ! wget -qO "$dest" "$url"; then
       rm -f "$dest"
-      log "Falha ao baixar via wget: $url"
       return 1
     fi
   else
-    log "Nem curl nem wget disponíveis."
+    log "curl ou wget nao encontrado"
     rm -f "$dest"
     return 1
   fi
@@ -70,56 +64,52 @@ download_script_to_temp() {
   echo "$dest"
 }
 
-get_script_path() {
+get_script() {
   local name="$1"
   local local_path="${SCRIPT_DIR}/${name}"
 
   if [[ -f "$local_path" ]]; then
-    log "Usando script local: $local_path"
+    log "Usando local: $local_path"
     echo "$local_path"
     return 0
   fi
 
-  log "Script local não encontrado, tentando baixar: $name"
-  download_script_to_temp "$name"
+  download_script "$name"
 }
 
 run_bootstrap() {
-  local bootstrap_path
-  bootstrap_path="$(get_script_path "$BOOTSTRAP_NAME")"
+  local path
+  path="$(get_script "$BOOTSTRAP_NAME")"
 
-  if [[ -z "$bootstrap_path" || ! -f "$bootstrap_path" ]]; then
-    log "ERRO: Não foi possível obter $BOOTSTRAP_NAME"
+  if [[ -z "$path" || ! -f "$path" ]]; then
+    log "ERRO: bootstrap nao encontrado"
     return 1
   fi
 
-  log "Executando bootstrap: $bootstrap_path"
+  log "Executando bootstrap"
   if [[ "${AUTO_INSTALL_JQ:-}" == "1" ]]; then
-    bash "$bootstrap_path" --yes
+    bash "$path" --yes
   else
-    bash "$bootstrap_path"
+    bash "$path"
   fi
 
   local ret=$?
-
-  # Cleanup se foi temporário
-  if [[ "$bootstrap_path" == /tmp/* ]]; then
-    rm -f "$bootstrap_path"
+  if [[ "$path" == /tmp/* ]]; then
+    rm -f "$path"
   fi
-
   return $ret
 }
 
 read_menu() {
   cat <<EOF
 
-╔════════════════════════════════════════════════════════╗
-║                   MENU PRINCIPAL                       ║
-╚════════════════════════════════════════════════════════╝
+==========================================================
+                   MENU PRINCIPAL
+==========================================================
 
   1) Instalar service
   2) Remover service
-  3) Reinstalar (remove -> install)
+  3) Reinstalar
   4) Status do service
   5) Sair
 
@@ -129,80 +119,73 @@ EOF
 }
 
 do_install() {
-  local install_path
-  install_path="$(get_script_path "$INSTALL_SCRIPT_NAME")"
+  local path
+  path="$(get_script "$INSTALL_SCRIPT_NAME")"
 
-  if [[ -z "$install_path" || ! -f "$install_path" ]]; then
-    log "ERRO: Não foi possível obter $INSTALL_SCRIPT_NAME"
+  if [[ -z "$path" || ! -f "$path" ]]; then
+    log "ERRO: instalador nao encontrado"
     return 1
   fi
 
-  echo ""
-  log "Executando instalador: $install_path"
-  bash "$install_path"
+  log "Executando instalador"
+  bash "$path"
 
-  # Cleanup se foi temporário
-  if [[ "$install_path" == /tmp/* ]]; then
-    rm -f "$install_path"
+  if [[ "$path" == /tmp/* ]]; then
+    rm -f "$path"
   fi
 }
 
 do_uninstall() {
-  local uninstall_path
-  uninstall_path="$(get_script_path "$UNINSTALL_SCRIPT_NAME")"
+  local path
+  path="$(get_script "$UNINSTALL_SCRIPT_NAME")"
 
-  if [[ -z "$uninstall_path" || ! -f "$uninstall_path" ]]; then
-    log "ERRO: Não foi possível obter $UNINSTALL_SCRIPT_NAME"
+  if [[ -z "$path" || ! -f "$path" ]]; then
+    log "ERRO: desinstalador nao encontrado"
     return 1
   fi
 
-  echo ""
-  log "Executando desinstalador: $uninstall_path"
-  bash "$uninstall_path"
+  log "Executando desinstalador"
+  bash "$path"
 
-  # Cleanup se foi temporário
-  if [[ "$uninstall_path" == /tmp/* ]]; then
-    rm -f "$uninstall_path"
+  if [[ "$path" == /tmp/* ]]; then
+    rm -f "$path"
   fi
 }
 
 do_status() {
   echo ""
-  echo "Digite o nome do service para checar (ex: dfe-converter-qa):"
-  read -r service_name
+  read -rp "Nome do service: " service_name
 
   if [[ -z "$service_name" ]]; then
-    echo "Nome vazio, cancelando."
+    echo "Nome vazio"
     return
   fi
 
   echo ""
-  echo "╔════════════════════════════════════════════════════════╗"
-  echo "║              STATUS DO SERVICO                         ║"
-  echo "╚════════════════════════════════════════════════════════╝"
+  echo "=========================================================="
+  echo "              STATUS DO SERVICO"
+  echo "=========================================================="
   echo ""
 
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl status "${service_name}. service" || echo "Service não encontrado ou erro."
+    systemctl status "${service_name}. service" || echo "Service nao encontrado"
   else
-    echo "systemctl não disponível neste sistema."
+    echo "systemctl nao disponivel"
   fi
 }
 
-# ================== Entrypoint ===================
 ensure_root
 show_banner
 
 log "Inicializando..."
 echo ""
 
-# Executa bootstrap primeiro para garantir dependências (jq)
 if !  run_bootstrap; then
-  log "ERRO: Bootstrap falhou. Instale as dependências manualmente e tente novamente."
+  log "ERRO: Bootstrap falhou"
   exit 1
 fi
 
-log "Bootstrap concluído com sucesso."
+log "Bootstrap OK"
 
 while true; do
   opt="$(read_menu)"
@@ -215,14 +198,11 @@ while true; do
       ;;
     3)
       echo ""
-      echo "╔════════════════════════════════════════════════════════╗"
-      echo "║                  REINSTALACAO                          ║"
-      echo "╚════════════════════════════════════════════════════════╝"
-      echo ""
-      log "Passo 1/2: Removendo service existente..."
+      log "REINSTALACAO"
+      log "Passo 1/2: Removendo..."
       do_uninstall || true
       echo ""
-      log "Passo 2/2: Instalando novamente..."
+      log "Passo 2/2: Instalando..."
       do_install
       ;;
     4)
@@ -230,17 +210,16 @@ while true; do
       ;;
     5)
       echo ""
-      log "Encerrando o setup. Ate logo!"
-      echo ""
+      log "Encerrando"
       exit 0
       ;;
     *)
-      echo "Opção inválida."
+      echo "Opcao invalida"
       ;;
   esac
 
   echo ""
-  echo "───────────────────────────────────────────────────────────"
+  echo "----------------------------------------------------------"
   read -rp "Pressione ENTER para continuar"
   show_banner
 done
