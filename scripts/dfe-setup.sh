@@ -1,165 +1,207 @@
-<#
-dfe-setup.ps1 - Menu interativo para instalar / remover /reinstalar (Windows)
-Coloque dfe-install.ps1 e dfe-uninstall.ps1 no mesmo diretório deste script.
-Se dfe-bootstrap.sh não existir localmente, este script tentará baixá-lo
-do raw GitHub (tenta padrões /main/... e /refs/heads/main/...) ou usar
-DFESCRIPTS_RAW_BASE quando definido. Em seguida executa o bootstrap via bash
-para garantir dependências (jq) antes de prosseguir no Linux.
-Execute em PowerShell como Administrador.
-#>
-[CmdletBinding()]
-param()
+#!/usr/bin/env bash
+# dfe-setup.sh - Menu interativo para instalar / remover / reinstalar (Linux)
+# Baixa scripts do GitHub ou usa locais e executa bootstrap antes de prosseguir.
+# Execute como root (sudo).
+set -o errexit
+set -o nounset
+set -o pipefail
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$InstallScript = Join-Path $ScriptDir 'dfe-install.ps1'
-$UninstallScript = Join-Path $ScriptDir 'dfe-uninstall.ps1'
-$BootstrapName = 'dfe-bootstrap.sh'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RAW_BASE="${DFESCRIPTS_RAW_BASE:-https://raw. githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts}"
 
-function Ensure-Elevated {
-    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($id)
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Host "Reexecutando em modo Administrador..."
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)
-        if ($pwsh) { $psi.FileName = $pwsh.Source } else { $psi.FileName = (Get-Command powershell).Source }
-        $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-        $psi.Verb = "runas"
-        try { [System.Diagnostics.Process]::Start($psi) | Out-Null; exit } catch { Write-Error "Falha ao elevar."; exit 1 }
-    }
+BOOTSTRAP_NAME="dfe-bootstrap.sh"
+INSTALL_SCRIPT_NAME="dfe-install.sh"
+UNINSTALL_SCRIPT_NAME="dfe-uninstall.sh"
+
+log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
+
+ensure_root() {
+  if [[ $EUID -ne 0 ]]; then
+    echo "ERRO: execute este script como root (sudo)."
+    exit 1
+  fi
 }
 
-function Get-BootstrapPath {
-    param(
-        [string]$ScriptDir,
-        [string]$BootstrapName = 'dfe-bootstrap.sh'
-    )
+download_script_to_temp() {
+  local name="$1"
+  local url="${RAW_BASE}/${name}"
+  local dest
+  dest="$(mktemp /tmp/"${name}. XXXXXX")"
 
-    $local = Join-Path $ScriptDir $BootstrapName
-    if (Test-Path $local) {
-        Write-Verbose "Bootstrap local encontrado: $local"
-        return $local
-    }
+  log "Baixando $url -> $dest"
+  if command -v curl >/dev/null 2>&1; then
+    if !  curl -fsSL "$url" -o "$dest"; then
+      rm -f "$dest"
+      log "Falha ao baixar via curl: $url"
+      return 1
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    if ! wget -qO "$dest" "$url"; then
+      rm -f "$dest"
+      log "Falha ao baixar via wget: $url"
+      return 1
+    fi
+  else
+    log "Nem curl nem wget disponíveis."
+    rm -f "$dest"
+    return 1
+  fi
 
-    # Build candidate bases
-    if ($env:DFESCRIPTS_RAW_BASE) {
-        $bases = @($env:DFESCRIPTS_RAW_BASE.TrimEnd('/'))
-    } else {
-        $owner = "TrackerCenter"
-        $repo = "dfe-converter-service"
-        $branch = "main"
-        $base1 = "https://raw.githubusercontent.com/$owner/$repo/$branch/scripts"
-        $base2 = "https://raw.githubusercontent.com/$owner/$repo/refs/heads/$branch/scripts"
-        $bases = @($base1, $base2)
-    }
-
-    # create temp filename
-    $tmp = Join-Path $env:TEMP ("$BootstrapName." + [guid]::NewGuid().ToString() + ".sh")
-
-    foreach ($b in $bases) {
-        $url = "$b/$BootstrapName"
-        Write-Verbose "Tentando baixar bootstrap de: $url"
-        try {
-            # prefer Invoke-WebRequest; em PS7 UseBasicParsing não é necessário
-            Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -ErrorAction Stop
-            # ensure executable permission if bash on Windows (WSL / Git Bash), not necessary but keep file
-            return $tmp
-        } catch {
-            Write-Verbose "Falha ao baixar $url : $($_.Exception.Message)"
-            if (Test-Path $tmp) { Remove-Item -Force $tmp -ErrorAction SilentlyContinue }
-        }
-    }
-
-    throw "Falha ao baixar $BootstrapName; tente definir DFESCRIPTS_RAW_BASE para apontar para a pasta raw correta, ou coloque $BootstrapName em $ScriptDir"
+  chmod +x "$dest"
+  echo "$dest"
 }
 
-function Run-LinuxBootstrap {
-    param(
-        [string]$BootstrapPath
-    )
-    # verifica se existe bash disponível (Git Bash, WSL, Cygwin ou bash no PATH)
-    $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
-    if (-not $bashCmd) {
-        Write-Warning "Não foi encontrado 'bash' no PATH. O bootstrap é um script POSIX (bash). Instale bash (ex: Git Bash / WSL) ou coloque dfe-bootstrap.sh localmente no host Linux que executará o setup."
-        return $false
-    }
+get_script_path() {
+  local name="$1"
+  local local_path="${SCRIPT_DIR}/${name}"
 
-    # se AUTO_INSTALL_JQ=1 estiver definido no ambiente Windows, repassamos via variável de ambiente
-    if ($env:AUTO_INSTALL_JQ -eq '1') {
-        Write-Host "AUTO_INSTALL_JQ=1 detectado, executando bootstrap sem prompt (--yes)..."
-        & $bashCmd.Path $BootstrapPath --yes
-    } else {
-        Write-Host "Executando bootstrap (pode pedir confirmação para instalar dependências)..."
-        & $bashCmd.Path $BootstrapPath
-    }
+  if [[ -f "$local_path" ]]; then
+    log "Usando script local: $local_path"
+    echo "$local_path"
+    return 0
+  fi
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "O bootstrap retornou código $LASTEXITCODE"
-        return $false
-    }
-    return $true
+  log "Script local não encontrado, tentando baixar: $name"
+  download_script_to_temp "$name"
 }
 
-function Read-Menu {
-    Write-Host ""
-    Write-Host "=== DFe Converter Setup (Windows) ==="
-    Write-Host "1) Instalar service"
-    Write-Host "2) Remover service"
-    Write-Host "3) Reinstalar (remove -> install)"
-    Write-Host "4) Status do service"
-    Write-Host "5) Sair"
-    $choice = Read-Host "Escolha (1-5)"
-    return $choice
+run_bootstrap() {
+  local bootstrap_path
+  bootstrap_path="$(get_script_path "$BOOTSTRAP_NAME")"
+
+  if [[ -z "$bootstrap_path" || ! -f "$bootstrap_path" ]]; then
+    log "ERRO: Não foi possível obter $BOOTSTRAP_NAME"
+    return 1
+  fi
+
+  log "Executando bootstrap: $bootstrap_path"
+  if [[ "${AUTO_INSTALL_JQ:-}" == "1" ]]; then
+    bash "$bootstrap_path" --yes
+  else
+    bash "$bootstrap_path"
+  fi
+
+  local ret=$?
+
+  # Cleanup se foi temporário
+  if [[ "$bootstrap_path" == /tmp/* ]]; then
+    rm -f "$bootstrap_path"
+  fi
+
+  return $ret
 }
 
-function Do-Install {
-    if (-not (Test-Path $InstallScript)) { Write-Error "dfe-install.ps1 não encontrado em $ScriptDir"; return }
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $InstallScript
+read_menu() {
+  cat <<EOF
+
+=== DFe Converter Setup (Linux) ===
+1) Instalar service
+2) Remover service
+3) Reinstalar (remove -> install)
+4) Status do service
+5) Sair
+EOF
+  read -rp "Escolha (1-5): " choice
+  echo "$choice"
 }
 
-function Do-Uninstall {
-    if (-not (Test-Path $UninstallScript)) { Write-Error "dfe-uninstall.ps1 não encontrado em $ScriptDir"; return }
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $UninstallScript
+do_install() {
+  local install_path
+  install_path="$(get_script_path "$INSTALL_SCRIPT_NAME")"
+
+  if [[ -z "$install_path" || !  -f "$install_path" ]]; then
+    log "ERRO: Não foi possível obter $INSTALL_SCRIPT_NAME"
+    return 1
+  fi
+
+  log "Executando instalador: $install_path"
+  bash "$install_path"
+
+  # Cleanup se foi temporário
+  if [[ "$install_path" == /tmp/* ]]; then
+    rm -f "$install_path"
+  fi
 }
 
-function Do-Status {
-    $s = Read-Host "Nome do servico para checar"
-    if ([string]::IsNullOrWhiteSpace($s)) { Write-Host "Nome vazio"; return }
-    Get-Service -Name $s -ErrorAction SilentlyContinue | Format-List *
+do_uninstall() {
+  local uninstall_path
+  uninstall_path="$(get_script_path "$UNINSTALL_SCRIPT_NAME")"
+
+  if [[ -z "$uninstall_path" || ! -f "$uninstall_path" ]]; then
+    log "ERRO: Não foi possível obter $UNINSTALL_SCRIPT_NAME"
+    return 1
+  fi
+
+  log "Executando desinstalador: $uninstall_path"
+  bash "$uninstall_path"
+
+  # Cleanup se foi temporário
+  if [[ "$uninstall_path" == /tmp/* ]]; then
+    rm -f "$uninstall_path"
+  fi
+}
+
+do_status() {
+  echo ""
+  echo "Digite o nome do service para checar (ex: dfe-converter-qa):"
+  read -r service_name
+
+  if [[ -z "$service_name" ]]; then
+    echo "Nome vazio, cancelando."
+    return
+  fi
+
+  echo ""
+  echo "=== Status do Service: $service_name ==="
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl status "${service_name}. service" || echo "Service não encontrado ou erro."
+  else
+    echo "systemctl não disponível neste sistema."
+  fi
 }
 
 # ================== Entrypoint ===================
-Ensure-Elevated
+ensure_root
 
-# Tenta obter bootstrap (local ou baixar dos raw URLs)
-$bootstrapPath = $null
-try {
-    $bootstrapPath = Get-BootstrapPath -ScriptDir $ScriptDir -BootstrapName $BootstrapName
-} catch {
-    Write-Warning $_.Exception.Message
-    # Se não houve bootstrap, prosseguimos apenas com o menu Windows (não temos dependência de jq no Windows)
-    Write-Host "Continuando sem executar dfe-bootstrap.sh (apenas funcionalidade Windows estará disponível)."
-    $bootstrapPath = $null
-}
+log "=== DFe Converter Setup (Linux) ==="
+log "Inicializando..."
 
-if ($bootstrapPath) {
-    # Executa bootstrap via bash (apenas necessário para máquinas Linux; em Windows permite preparar hosts Linux remotos)
-    $ok = Run-LinuxBootstrap -BootstrapPath $bootstrapPath
-    if (-not $ok) {
-        Write-Warning "Falha ao executar o bootstrap. Se você estiver em ambiente Windows e não usar o bootstrap, pode ignorar."
-    } else {
-        Write-Host "Bootstrap executado com sucesso."
-    }
-}
+# Executa bootstrap primeiro para garantir dependências (jq)
+if !  run_bootstrap; then
+  log "ERRO: Bootstrap falhou. Instale as dependências manualmente e tente novamente."
+  exit 1
+fi
 
-while ($true) {
-    $opt = Read-Menu
-    switch ($opt) {
-        '1' { Do-Install; break }
-        '2' { Do-Uninstall; break }
-        '3' { Do-Uninstall; Do-Install; break }
-        '4' { Do-Status; break }
-        '5' { Write-Host "Saindo."; exit 0 }
-        default { Write-Host "Opcao invalida." }
-    }
-}
+log "Bootstrap concluído com sucesso."
+
+while true; do
+  opt="$(read_menu)"
+  case "$opt" in
+    1)
+      do_install
+      ;;
+    2)
+      do_uninstall
+      ;;
+    3)
+      log "Reinstalação: removendo service existente..."
+      do_uninstall || true
+      log "Agora instalando novamente..."
+      do_install
+      ;;
+    4)
+      do_status
+      ;;
+    5)
+      log "Saindo."
+      exit 0
+      ;;
+    *)
+      echo "Opção inválida."
+      ;;
+  esac
+
+  echo ""
+  read -rp "Pressione ENTER para continuar"
+done
