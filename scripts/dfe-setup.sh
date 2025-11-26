@@ -1,19 +1,38 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo para instalar / remover / reinstalar (Linux)
+# Versao: 1. 0.0
 # Baixa scripts do GitHub ou usa locais e executa bootstrap antes de prosseguir.
 # Execute como root (sudo).
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RAW_BASE="${DFESCRIPTS_RAW_BASE:-https://raw. githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts}"
+# ---------- Versao do Script ----------
+SCRIPT_VERSION="1.0. 0"
 
-BOOTSTRAP_NAME="dfe-bootstrap.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RAW_BASE="${DFESCRIPTS_RAW_BASE:-https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts}"
+
+BOOTSTRAP_NAME="dfe-bootstrap. sh"
 INSTALL_SCRIPT_NAME="dfe-install.sh"
 UNINSTALL_SCRIPT_NAME="dfe-uninstall.sh"
 
 log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
+
+show_banner() {
+  clear
+  echo ""
+  echo "╔════════════════════════════════════════════════════════╗"
+  echo "║                                                        ║"
+  echo "║           DF-e Converter - Setup (Linux)              ║"
+  echo "║                                                        ║"
+  echo "║                   Versao: $SCRIPT_VERSION                      ║"
+  echo "║                                                        ║"
+  echo "║              J2R Consultoria Informatica               ║"
+  echo "║                                                        ║"
+  echo "╚════════════════════════════════════════════════════════╝"
+  echo ""
+}
 
 ensure_root() {
   if [[ $EUID -ne 0 ]]; then
@@ -94,12 +113,16 @@ run_bootstrap() {
 read_menu() {
   cat <<EOF
 
-=== DFe Converter Setup (Linux) ===
-1) Instalar service
-2) Remover service
-3) Reinstalar (remove -> install)
-4) Status do service
-5) Sair
+╔════════════════════════════════════════════════════════╗
+║                   MENU PRINCIPAL                       ║
+╚════════════════════════════════════════════════════════╝
+
+  1) Instalar service
+  2) Remover service
+  3) Reinstalar (remove -> install)
+  4) Status do service
+  5) Sair
+
 EOF
   read -rp "Escolha (1-5): " choice
   echo "$choice"
@@ -109,11 +132,12 @@ do_install() {
   local install_path
   install_path="$(get_script_path "$INSTALL_SCRIPT_NAME")"
 
-  if [[ -z "$install_path" || !  -f "$install_path" ]]; then
+  if [[ -z "$install_path" || ! -f "$install_path" ]]; then
     log "ERRO: Não foi possível obter $INSTALL_SCRIPT_NAME"
     return 1
   fi
 
+  echo ""
   log "Executando instalador: $install_path"
   bash "$install_path"
 
@@ -132,6 +156,7 @@ do_uninstall() {
     return 1
   fi
 
+  echo ""
   log "Executando desinstalador: $uninstall_path"
   bash "$uninstall_path"
 
@@ -152,7 +177,10 @@ do_status() {
   fi
 
   echo ""
-  echo "=== Status do Service: $service_name ==="
+  echo "╔════════════════════════════════════════════════════════╗"
+  echo "║              STATUS DO SERVICO                         ║"
+  echo "╚════════════════════════════════════════════════════════╝"
+  echo ""
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl status "${service_name}. service" || echo "Service não encontrado ou erro."
@@ -163,9 +191,10 @@ do_status() {
 
 # ================== Entrypoint ===================
 ensure_root
+show_banner
 
-log "=== DFe Converter Setup (Linux) ==="
 log "Inicializando..."
+echo ""
 
 # Executa bootstrap primeiro para garantir dependências (jq)
 if !  run_bootstrap; then
@@ -185,16 +214,24 @@ while true; do
       do_uninstall
       ;;
     3)
-      log "Reinstalação: removendo service existente..."
+      echo ""
+      echo "╔════════════════════════════════════════════════════════╗"
+      echo "║                  REINSTALACAO                          ║"
+      echo "╚════════════════════════════════════════════════════════╝"
+      echo ""
+      log "Passo 1/2: Removendo service existente..."
       do_uninstall || true
-      log "Agora instalando novamente..."
+      echo ""
+      log "Passo 2/2: Instalando novamente..."
       do_install
       ;;
     4)
       do_status
       ;;
     5)
-      log "Saindo."
+      echo ""
+      log "Encerrando o setup. Ate logo!"
+      echo ""
       exit 0
       ;;
     *)
@@ -203,5 +240,7 @@ while true; do
   esac
 
   echo ""
+  echo "───────────────────────────────────────────────────────────"
   read -rp "Pressione ENTER para continuar"
+  show_banner
 done

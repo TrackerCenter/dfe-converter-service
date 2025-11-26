@@ -1,17 +1,21 @@
 <#
 dfe-setup.ps1 - Menu interativo para instalar / remover / reinstalar (Windows)
+Versao: 1.0.0
 Comportamento:
  - Baixa scripts diretamente de:
    https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts
- - Salva temporariamente em $env:TEMP com o mesmo nome (ex.: dfe-install. ps1, dfe-bootstrap.sh)
+ - Salva temporariamente em $env:TEMP com o mesmo nome (ex.: dfe-install.ps1, dfe-bootstrap.sh)
  - Garante que arquivos . ps1 possuem extensao adequada para execuçao com -File
- - Por segurança NaO executa automaticamente o dfe-bootstrap.sh no Windows,
+ - Por segurança NAO executa automaticamente o dfe-bootstrap.sh no Windows,
    a menos que a variável de ambiente RUN_LINUX_BOOTSTRAP=1 seja definida.
  - Remove arquivos temporários após execuçao.
 Execute em PowerShell como Administrador.
 #>
 [CmdletBinding()]
 param()
+
+# ---------- Versao do Script ----------
+$SCRIPT_VERSION = "1.0.0"
 
 # ---------- Config ----------
 $RawBase = "https://raw.githubusercontent. com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts"
@@ -30,14 +34,29 @@ if ([string]::IsNullOrWhiteSpace($ScriptPath)) {
     $RunningInline = $false
 }
 
+function Show-Banner {
+    Clear-Host
+    Write-Host ""
+    Write-Host "╔════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║                                                        ║" -ForegroundColor Cyan
+    Write-Host "║           DF-e Converter - Setup (Windows)            ║" -ForegroundColor Cyan
+    Write-Host "║                                                        ║" -ForegroundColor Cyan
+    Write-Host "║                   Versao: $SCRIPT_VERSION                      ║" -ForegroundColor Cyan
+    Write-Host "║                                                        ║" -ForegroundColor Cyan
+    Write-Host "║              J2R Consultoria Informatica               ║" -ForegroundColor Cyan
+    Write-Host "║                                                        ║" -ForegroundColor Cyan
+    Write-Host "╚════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host ""
+}
+
 function Ensure-Elevated {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object System.Security.Principal.WindowsPrincipal($id)
-    if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Host "Reexecutando em modo Administrador..."
-        $psi = New-Object System.Diagnostics. ProcessStartInfo
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Host "Reexecutando em modo Administrador..." -ForegroundColor Yellow
+        $psi = New-Object System. Diagnostics.ProcessStartInfo
         $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)
-        if ($pwsh) { $psi.FileName = $pwsh.Source } else { $psi.FileName = (Get-Command powershell). Source }
+        if ($pwsh) { $psi. FileName = $pwsh.Source } else { $psi.FileName = (Get-Command powershell). Source }
         $psi. Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
         $psi. Verb = "runas"
         try { [System.Diagnostics.Process]::Start($psi) | Out-Null; exit } catch { Write-Error "Falha ao elevar. "; exit 1 }
@@ -76,9 +95,9 @@ function Convert-WindowsPathToBash($winPath, $bashPath) {
 
 function Run-LinuxBootstrapSafe {
     param([string]$BootstrapPath)
-    # Por padrao NaO executamos . sh no Windows; usar RUN_LINUX_BOOTSTRAP=1 se realmente deseja.
+    # Por padrao NAO executamos . sh no Windows; usar RUN_LINUX_BOOTSTRAP=1 se realmente deseja.
     if ($env:RUN_LINUX_BOOTSTRAP -ne '1') {
-        Write-Host "Bootstrap presente em $BootstrapPath, mas por padrao NaO executarei scripts .sh no Windows."
+        Write-Host "Bootstrap presente em $BootstrapPath, mas por padrao NAO executarei scripts .sh no Windows." -ForegroundColor Yellow
         Write-Host 'Se realmente deseja executar o bootstrap (requer bash configurado), defina:'
         Write-Host '  $env:RUN_LINUX_BOOTSTRAP = "1"'
         return $false
@@ -130,10 +149,10 @@ function Normalize-ServiceName {
 
     # Decompose (FormD) and remove non-spacing marks (diacritics)
     $nf = [System.Text.NormalizationForm]::FormD
-    $decomposed = $name.Normalize($nf)
-    $sb = New-Object System.Text.StringBuilder
+    $decomposed = $name. Normalize($nf)
+    $sb = New-Object System. Text.StringBuilder
     foreach ($c in $decomposed. ToCharArray()) {
-        $cat = [System.Globalization. CharUnicodeInfo]::GetUnicodeCategory($c)
+        $cat = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($c)
         if ($cat -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
             [void]$sb.Append($c)
         }
@@ -142,7 +161,7 @@ function Normalize-ServiceName {
 
     # Replace whitespace with nothing and remove any character not in A-Z a-z 0-9 - _
     $noSpace = $recomposed -replace '\s+', ''
-    $chars = $noSpace. ToCharArray() | ForEach-Object {
+    $chars = $noSpace.ToCharArray() | ForEach-Object {
         if ($_ -match '[A-Za-z0-9\-_]') { $_ } else { '' }
     }
     return -join $chars
@@ -164,28 +183,33 @@ function Read-ServiceChoice {
                 if (![string]::IsNullOrWhiteSpace($custom)) {
                     return (Normalize-ServiceName $custom)
                 } else {
-                    Write-Host "Nome invalido. Tente novamente."
+                    Write-Host "Nome invalido. Tente novamente." -ForegroundColor Red
                 }
             }
-            default { Write-Host "Opcao invalida. Tente novamente." }
+            default { Write-Host "Opcao invalida. Tente novamente." -ForegroundColor Red }
         }
     }
 }
 
 function Read-Menu {
     Write-Host ""
-    Write-Host "=== DFe Converter Setup (Windows) ==="
-    Write-Host "1) Instalar service"
-    Write-Host "2) Remover service"
-    Write-Host "3) Reinstalar (remove -> install)"
-    Write-Host "4) Status do service"
-    Write-Host "5) Sair"
+    Write-Host "╔════════════════════════════════════════════════════════╗" -ForegroundColor Green
+    Write-Host "║                   MENU PRINCIPAL                       ║" -ForegroundColor Green
+    Write-Host "╚════════════════════════════════════════════════════════╝" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  1) Instalar service"
+    Write-Host "  2) Remover service"
+    Write-Host "  3) Reinstalar (remove -> install)"
+    Write-Host "  4) Status do service"
+    Write-Host "  5) Sair"
+    Write-Host ""
     $choice = Read-Host "Escolha (1-5)"
     return $choice
 }
 
 function Do-Install {
-    Write-Host "Baixando dfe-install.ps1..."
+    Write-Host ""
+    Write-Host "Baixando dfe-install.ps1..." -ForegroundColor Cyan
     $tempInstall = Download-ScriptToTemp -Name $InstallScriptName
     if (-not $tempInstall) {
         Write-Error "Falha ao baixar $InstallScriptName"
@@ -195,7 +219,8 @@ function Do-Install {
 }
 
 function Do-Uninstall {
-    Write-Host "Baixando dfe-uninstall. ps1..."
+    Write-Host ""
+    Write-Host "Baixando dfe-uninstall. ps1..." -ForegroundColor Cyan
     $tempUninstall = Download-ScriptToTemp -Name $UninstallScriptName
     if (-not $tempUninstall) {
         Write-Error "Falha ao baixar $UninstallScriptName"
@@ -207,41 +232,45 @@ function Do-Uninstall {
 function Do-Status {
     $serviceName = Read-ServiceChoice
     if ([string]::IsNullOrWhiteSpace($serviceName)) {
-        Write-Host "Nome vazio"
+        Write-Host "Nome vazio" -ForegroundColor Red
         return
     }
     try {
         $svc = Get-Service -Name $serviceName -ErrorAction Stop
         Write-Host ""
-        Write-Host "=== Status do Servico: $serviceName ===" -ForegroundColor Cyan
-        Write-Host "Nome          : $($svc.Name)"
-        Write-Host "DisplayName   : $($svc. DisplayName)"
-        Write-Host "Status        : $($svc.Status)"
-        Write-Host "StartType     : $($svc. StartType)"
+        Write-Host "╔════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+        Write-Host "║              STATUS DO SERVICO                         ║" -ForegroundColor Cyan
+        Write-Host "╚════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Nome          : $($svc.Name)" -ForegroundColor White
+        Write-Host "DisplayName   : $($svc. DisplayName)" -ForegroundColor White
+        Write-Host "Status        : $($svc.Status)" -ForegroundColor $(if($svc.Status -eq 'Running'){'Green'}else{'Red'})
+        Write-Host "StartType     : $($svc.StartType)" -ForegroundColor White
         Write-Host ""
     } catch {
-        Write-Warning "Servico '$serviceName' nao encontrado ou erro ao acessar: $($_.Exception.Message)"
+        Write-Warning "Servico '$serviceName' nao encontrado ou erro ao acessar: $($_.Exception. Message)"
     }
 }
 
 # ================== Entrypoint ===================
 Ensure-Elevated
+Show-Banner
 
-Write-Host "=== DFe Converter Setup (Windows) ===" -ForegroundColor Green
-Write-Host "Inicializando..."
+Write-Host "Inicializando..." -ForegroundColor Yellow
+Write-Host ""
 
 # Tenta baixar bootstrap (opcional, apenas para informar)
 $bootstrapPath = Download-ScriptToTemp -Name $BootstrapName
 if ($bootstrapPath) {
-    Write-Host "Bootstrap baixado: $bootstrapPath"
+    Write-Host "Bootstrap baixado: $bootstrapPath" -ForegroundColor Green
     $ok = Run-LinuxBootstrapSafe -BootstrapPath $bootstrapPath
     if (-not $ok) {
-        Write-Host "Bootstrap nao executado (esperado em ambiente Windows puro)."
+        Write-Host "Bootstrap nao executado (esperado em ambiente Windows puro)." -ForegroundColor Yellow
     }
     # Remove bootstrap temp
     if (Test-Path $bootstrapPath) { Remove-Item -Force $bootstrapPath -ErrorAction SilentlyContinue }
 } else {
-    Write-Host "Bootstrap nao disponivel (normal para setup Windows)."
+    Write-Host "Bootstrap nao disponivel (normal para setup Windows)." -ForegroundColor Yellow
 }
 
 while ($true) {
@@ -250,17 +279,30 @@ while ($true) {
         '1' { Do-Install; break }
         '2' { Do-Uninstall; break }
         '3' {
-            Write-Host "Reinstalacao: removendo servico existente..."
+            Write-Host ""
+            Write-Host "╔════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
+            Write-Host "║                  REINSTALACAO                          ║" -ForegroundColor Magenta
+            Write-Host "╚════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
+            Write-Host ""
+            Write-Host "Passo 1/2: Removendo servico existente..." -ForegroundColor Yellow
             Do-Uninstall
-            Write-Host "Agora instalando novamente..."
+            Write-Host ""
+            Write-Host "Passo 2/2: Instalando novamente..." -ForegroundColor Yellow
             Do-Install
             break
         }
         '4' { Do-Status; break }
-        '5' { Write-Host "Saindo. "; exit 0 }
-        default { Write-Host "Opcao invalida." }
+        '5' {
+            Write-Host ""
+            Write-Host "Encerrando o setup.  Ate logo!" -ForegroundColor Green
+            Write-Host ""
+            exit 0
+        }
+        default { Write-Host "Opcao invalida." -ForegroundColor Red }
     }
 
     Write-Host ""
+    Write-Host "───────────────────────────────────────────────────────────" -ForegroundColor DarkGray
     Read-Host "Pressione ENTER para continuar"
+    Show-Banner
 }
