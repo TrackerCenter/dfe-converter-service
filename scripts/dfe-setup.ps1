@@ -7,7 +7,7 @@ Execute em PowerShell como Administrador.
 param()
 
 $SCRIPT_VERSION = "1.0.5"
-$RawBase = "https://raw.githubusercontent. com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts"
+$RawBase = "https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts"
 $BootstrapName = 'dfe-bootstrap.sh'
 $InstallScriptName = 'dfe-install.ps1'
 $UninstallScriptName = 'dfe-uninstall.ps1'
