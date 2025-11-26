@@ -1,6 +1,5 @@
 <#
 dfe-install.ps1 - Instalador de service Windows (usa nssm se necessario).
-Adaptado do seu install-service.ps1 original. Ao final grava <InstallDir>\.dfe-setup.json
 Execute em PowerShell ELEVADO no diretorio do instalador ou forneca -InstallDir.
 #>
 param(
@@ -15,9 +14,11 @@ try { chcp 65001 > $null 2>&1 } catch {}
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-function Log { param($m) "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))  $m" | Tee-Object -FilePath (Join-Path $InstallDir 'script-install.log') -Append }
+function Log {
+    param($m)
+    "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))  $m" | Tee-Object -FilePath (Join-Path $InstallDir 'script-install.log') -Append
+}
 
-# Require elevation
 if (-not ([bool](net session 2>$null))) {
     Write-Error "Execute este script em PowerShell 'Como Administrador'."
     exit 1
@@ -41,6 +42,7 @@ function Read-EnvChoice {
         }
     }
 }
+
 function PromptWithDefault([string]$prompt, [string]$default) {
     $r = Read-Host "$prompt [$default]"
     if ([string]::IsNullOrWhiteSpace($r)) { return $default } else { return $r.Trim() }
@@ -73,7 +75,7 @@ else {
     $ServiceName = Read-Host "Digite o ServiceName (nome do servico Windows)"
     if ([string]::IsNullOrWhiteSpace($ServiceName)) { Write-Host "ServiceName obrigatorio. Abortando."; exit 2 }
     $DisplayName = Read-Host "Digite o DisplayName (nome exibido em Services.msc)"
-    if ([string]::IsNullOrWhiteSpace($DisplayName)) { Write-Host "DisplayName obrigatorio. Abortando. "; exit 2 }
+    if ([string]::IsNullOrWhiteSpace($DisplayName)) { Write-Host "DisplayName obrigatorio. Abortando."; exit 2 }
 }
 
 $javaExe = Join-Path $InstallDir "java\bin\java.exe"
@@ -92,7 +94,11 @@ Log ("Local Java: {0}" -f $javaExe)
 Log ("ServiceName: {0}" -f $ServiceName)
 Log ("DisplayName: {0}" -f $DisplayName)
 Log ("Description: {0}" -f $Description)
-if ($EnableAppLogs) { Log "Parametro -EnableAppLogs fornecido: logs SERÃO configurados." } else { Log "Por padrao logs NAO serao configurados." }
+if ($EnableAppLogs) {
+    Log "Parametro -EnableAppLogs fornecido: logs SERAO configurados."
+} else {
+    Log "Por padrao logs NAO serao configurados."
+}
 
 if (-not (Test-Path $jarPath)) {
     Write-Error "JAR nao encontrado: $jarPath"
@@ -103,10 +109,14 @@ if (-not (Test-Path $jarPath)) {
 if (-not (Test-Path $javaExe)) {
     Log ("Java local nao encontrado em {0}.  Tentando usar 'java' do PATH." -f $javaExe)
     $cmd = Get-Command java -ErrorAction SilentlyContinue
-    if ($cmd) { $javaExe = $cmd.Source } else { $javaExe = $null }
+    if ($cmd) {
+        $javaExe = $cmd.Source
+    } else {
+        $javaExe = $null
+    }
     if (-not $javaExe) {
         Write-Error "java nao encontrado localmente nem no PATH.  Coloque a JRE em $InstallDir\java ou instale a JRE no sistema."
-        Log "java nao encontrado. Abortando."
+        Log "java nao encontrado.  Abortando."
         exit 3
     } else {
         Log ("Usando java do PATH: {0}" -f $javaExe)
@@ -114,12 +124,16 @@ if (-not (Test-Path $javaExe)) {
 }
 
 if ($EnableAppLogs) {
-    if (-not (Test-Path $logsDir)) { New-Item -Path $logsDir -ItemType Directory -Force | Out-Null; Log ("Criada pasta de logs: {0}" -f $logsDir) }
+    if (-not (Test-Path $logsDir)) {
+        New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
+        Log ("Criada pasta de logs: {0}" -f $logsDir)
+    }
 }
 
-try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+} catch {}
 
-# download nssm if missing (same logic)
 if (-not (Test-Path $nssmExe)) {
     Log ("nssm.exe nao encontrado em {0}. Tentando baixar nssm-{1}.zip..." -f $InstallDir, $NssmVersion)
     $zipUrl = "https://nssm.cc/release/nssm-$NssmVersion.zip"
@@ -127,7 +141,9 @@ if (-not (Test-Path $nssmExe)) {
     try {
         Invoke-WebRequest -Uri $zipUrl -OutFile $tmpZip -UseBasicParsing -ErrorAction Stop
         $tmpExtract = Join-Path $env:TEMP "nssm-$NssmVersion"
-        if (Test-Path $tmpExtract) { Remove-Item -Recurse -Force $tmpExtract }
+        if (Test-Path $tmpExtract) {
+            Remove-Item -Recurse -Force $tmpExtract
+        }
         Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
         $candidate = Join-Path $tmpExtract "nssm-$NssmVersion\win64\nssm.exe"
         if (-not (Test-Path $candidate)) {
@@ -146,18 +162,22 @@ if (-not (Test-Path $nssmExe)) {
         Log ("Erro ao baixar/extrair nssm: {0}" -f $_.Exception.Message)
         exit 4
     } finally {
-        if (Test-Path $tmpZip) { Remove-Item $tmpZip -Force }
+        if (Test-Path $tmpZip) {
+            Remove-Item $tmpZip -Force
+        }
     }
 } else {
     Log ("nssm.exe ja presente: {0}" -f $nssmExe)
 }
 
-# Remove existing service (if any) to reinstall
 try {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($svc) {
-        Log "Servico existente detectado. Tentando parar e remover..."
-        if ($svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1 }
+        Log "Servico existente detectado.  Tentando parar e remover..."
+        if ($svc.Status -ne 'Stopped') {
+            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
+        }
         & $nssmExe remove $ServiceName confirm | ForEach-Object { Log $_ }
     }
 } catch {
@@ -210,19 +230,24 @@ try {
     Log ("Erro ao verificar status do servico: {0}" -f $_.Exception.Message)
 }
 
-# --- Gravacao do JSON de estado: <InstallDir>\.dfe-setup.json ---
 function Add-OrUpdate-InstallRecord {
     param($cfgPath, $record)
     if (Test-Path $cfgPath) {
-        try { $data = Get-Content $cfgPath -Raw | ConvertFrom-Json } catch { $data = @{ installations = @() } }
+        try {
+            $data = Get-Content $cfgPath -Raw | ConvertFrom-Json
+        } catch {
+            $data = @{ installations = @() }
+        }
     } else {
         $data = @{ installations = @() }
     }
-    # Remove existing with same serviceName or jarName
     $existsIndex = $null
     for ($i=0; $i -lt $data.installations.Count; $i++) {
         $ent = $data.installations[$i]
-        if ($ent.serviceName -eq $record.serviceName -or $ent.jarName -eq $record.jarName) { $existsIndex = $i; break }
+        if ($ent.serviceName -eq $record.serviceName -or $ent.jarName -eq $record.jarName) {
+            $existsIndex = $i
+            break
+        }
     }
     if ($existsIndex -ne $null) {
         $data.installations[$existsIndex] = $record
@@ -237,7 +262,6 @@ $cfgPath = Join-Path $InstallDir ".dfe-setup.json"
 $installedBy = $env:USERNAME
 $installedAt = (Get-Date).ToString("o")
 
-# CORRIGIDO: compatibilidade com PowerShell 5.1
 $javaCmd = Get-Command java -ErrorAction SilentlyContinue
 if ($javaCmd) {
     $javaPathUsed = $javaCmd.Source
