@@ -1,263 +1,137 @@
-# DF-e Converter — Instalar servico (nssm + Java local)
+# DFe Converter — Setup de serviço (dfe-setup)
 
-- `install-service.ps1` — instala o servico usando nssm (interativo).
-- `uninstall-service.ps1` — desinstala o servico (interativo), preserva pasta `java` local e remove Description automaticamente.
+Este repositório contém um conjunto de scripts para instalar, remover e gerenciar o serviço do DFe Converter em Linux (systemd) e Windows (nssm). O objetivo é oferecer um "setup" interativo e reutilizável, com registro do estado em um arquivo JSON por instalação.
 
-OBS: os scripts foram ajustados para evitar problemas de encoding no console. As mensagens nos scripts utilizam caracteres ASCII (sem acentos). Salve os arquivos `.ps1` em UTF-8 with BOM para melhor compatibilidade.
+Arquivos principais
+- dfe-setup.sh        — Menu interativo (Linux)
+- dfe-install.sh      — Instalador idempotente (Linux)
+- dfe-uninstall.sh    — Desinstalador (Linux)
+- dfe-setup.ps1       — Menu interativo (Windows)
+- dfe-install.ps1     — Instalador (Windows, usa nssm)
+- dfe-uninstall.ps1   — Desinstalador (Windows)
+- .dfe-setup.json     — arquivo de estado gerado dentro de cada INSTALL_DIR (ex.: `<INSTALL_DIR>/.dfe-setup.json`)
 
-Nota importante sobre logs
-- Por padrao o script NAO configura redirecionamento de stdout/stderr (logs DESABILITADOS) para economizar espaço em disco.
-- Se for necessario coletar logs da aplicacao, execute o instalador com o switch `-EnableAppLogs`:
-  .\install-service.ps1 -EnableAppLogs
+Visão geral
+- Cada instalação grava/atualiza um arquivo JSON em `<INSTALL_DIR>/.dfe-setup.json` contendo uma lista `installations` com as entradas daquela pasta.
+- Isso permite múltiplas configurações/serviços e possibilita que o desinstalador remova apenas a entrada correspondente.
+- O menu (`dfe-setup.*`) apenas orquestra (invoca instalador/desinstalador); você pode também usar os scripts `dfe-install*` / `dfe-uninstall*` de forma standalone.
 
----
+Requisitos (geral)
+- Linux:
+    - systemd (para gerenciamento de serviços).
+    - utilitários padrão: bash, coreutils, cp, chmod, chown, systemctl, sha256sum/cmp, python3 (ou python).
+    - executar como root (sudo).
+- Windows:
+    - PowerShell (preferível PowerShell 7+), privilégios Administrador.
+    - nssm será baixado automaticamente se necessário (requer acesso à internet) ou você pode colocá-lo em `InstallDir\nssm.exe`.
+    - A execução do PowerShell deve permitir scripts (ExecutionPolicy Bypass ao invocar diretamente).
 
-## 1 — Pre-requisitos
-- Windows (8/10/11 / Server) com PowerShell (5.1 ou 7+).
-- Executar tudo com privilegios de Administrador (UAC).
-- JAR/executavel da aplicacao em um diretorio (ex.: `C:\Dfe-Converter\DFe-Converter-QA.jar`).
-- (Recomendado) JRE embutida em `C:\Dfe-Converter\java\bin\java.exe` ou `java` disponivel no PATH.
-- `nssm.exe` em `C:\Dfe-Converter` ou conectividade para download (o script tenta baixar nssm).
-- Salve o `.ps1` em UTF-8 with BOM para evitar problemas de leitura de literais no PowerShell 5.1.
+Exemplos de execução (one-liners)
+- Linux (executa o menu baixando o script raw do GitHub):
+  ```bash
+  sudo bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/main/scripts/dfe-setup.sh)
+  ```
+  Observação: assegure que a URL aponte para a branch correta (ex.: `main`).
 
-Estrutura exemplificada:
-```
-C:\Dfe-Converter\
-  ├─ DFe-Converter-QA.jar
-  ├─ java\bin\java.exe   (opcional)
-  └─ nssm.exe            (opcional)
-```
+- Windows (execute em PowerShell como Administrador):
+  ```powershell
+  iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/main/scripts/dfe-setup.ps1')
+  ```
+  Observação: este comando baixa e executa o script remoto — adote verificações/assinaturas em ambiente sensível.
 
----
+Uso manual (Linux)
+1. Dê permissão de execução:
+   ```bash
+   chmod +x dfe-setup.sh dfe-install.sh dfe-uninstall.sh
+   ```
+2. Executar o menu:
+   ```bash
+   sudo ./dfe-setup.sh
+   ```
+3. Executar o instalador diretamente (exemplos):
+    - Interativo (aceitar defaults):
+      ```bash
+      sudo ./dfe-install.sh
+      ```
+    - Não interativo (aceita defaults):
+      ```bash
+      sudo ./dfe-install.sh --yes
+      ```
+    - Especificando diretório e JAR:
+      ```bash
+      sudo ./dfe-install.sh --install-dir /opt/DFE_CONVERTER_PROD --jar-source /tmp/DFe-Converter-PROD.jar --config-source /tmp/config.properties
+      ```
+    - Desinstalar (direto):
+      ```bash
+      sudo ./dfe-uninstall.sh --service DFeConverterPROD --install-dir /opt/DFE_CONVERTER_PROD
+      ```
 
-## 2 — Executar o script PowerShell (modo interativo)
+Uso manual (Windows)
+1. Abra PowerShell como Administrador.
+2. Execute o menu:
+   ```powershell
+   & "C:\caminho\para\dfe-setup.ps1"
+   ```
+   ou rode o one-liner (conforme seção anterior).
+3. Executar o instalador diretamente:
+   ```powershell
+   & "C:\caminho\para\dfe-install.ps1" -InstallDir "C:\Program Files\DFE_Converter_QA"
+   ```
+4. Executar o desinstalador diretamente:
+   ```powershell
+   & "C:\caminho\para\dfe-uninstall.ps1" -InstallDir "C:\Program Files\DFE_Converter_QA"
+   ```
 
-1. Abra PowerShell **Como Administrador**.
-2. Navegue ate o diretorio da app:
-```powershell
-cd C:\Dfe-Converter
-```
-3. (Opcional) permitir execucao apenas para esta sessao:
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force
-```
-4. Execute o script de instalacao:
-- Comportamento padrão (logs DESABILITADOS — recomendado para produção):
-```powershell
-.\install-service.ps1
-```
-- Habilitar logs de stdout/stderr (quando for necessário debugar):
-```powershell
-.\install-service.ps1 -EnableAppLogs
-```
+Arquivo de estado: `<INSTALL_DIR>/.dfe-setup.json`
+- Local: cada instalação grava seu arquivo em `<INSTALL_DIR>/.dfe-setup.json` (visível e de fácil acesso como você solicitou).
+- Estrutura:
+  ```json
+  {
+    "installations": [
+      {
+        "serviceName": "DFeConverterQA",
+        "jarName": "DFe-Converter-QA.jar",
+        "configName": "config.properties",
+        "javaPath": "/opt/DFE_CONVERTER_QA/java/bin/java",
+        "logsEnabled": false,
+        "installDir": "/opt/DFE_CONVERTER_QA",
+        "installedAt": "2025-11-26T12:34:56Z",
+        "installedBy": "rodrigocananea",
+        "os": "linux"
+      }
+    ]
+  }
+  ```
+- Regras:
+    - Ao instalar: o instalador adiciona ou atualiza a entrada no array `installations` do arquivo.
+    - Ao desinstalar: o desinstalador remove apenas a entrada com `serviceName` correspondente; se o array ficar vazio, o arquivo é removido.
+    - Suporta múltiplas entradas (para casos onde a mesma pasta contenha várias configurações/serviços).
 
-Ao executar o script ele eh interativo e ira pedir:
-- escolha do ambiente (opcoes: 1 = QA, 2 = PROD, 3 = Outro);
-- JarName (opcao com default para QA/PROD);
-- ServiceName (opcao com default para QA/PROD);
-- DisplayName (opcao com default para QA/PROD).
+Permissões e segurança
+- O arquivo `.dfe-setup.json` fica em local acessível por design. Para proteção:
+    - No Linux deixe o diretório de instalação com permissões corretas (por exemplo: dono `root` ou usuário do serviço; modo 0755 para o diretório e 0640 para o arquivo, se quiser restringir leitura).
+    - No Windows use `C:\Program Files\...` ou `C:\ProgramData\...` e ajuste ACLs se necessário.
+- One-liners executam código remoto. Em ambientes sensíveis, prefira baixar os arquivos, verificar hash e inspecionar antes de executar.
 
-Exemplo de fluxo (resumo):
-- Escolha `1` para QA -> aceita os defaults com Enter, ou edite JarName/ServiceName/DisplayName.
-- Escolha `2` para PROD -> aceita defaults PROD ou informe os valores.
-- Escolha `3` para Outro -> informe JarName, ServiceName e DisplayName manualmente (obrigatorio).
+Opções e flags importantes
+- dfe-install.sh:
+    - --yes            : aceita defaults sem perguntas
+    - --install-dir    : diretório de instalação
+    - --jar-source     : caminho para JAR de origem
+    - --config-source  : caminho para config.properties (opcional)
+    - --no-start       : não iniciar/habilitar o serviço no final
+    - --force          : sobrescrever unit/env sem perguntar
+- dfe-uninstall.sh:
+    - --service NAME   : nome do systemd service a remover
+    - --install-dir    : diretório de instalação (atualiza .dfe-setup.json nesse local)
+- dfe-install.ps1 / dfe-uninstall.ps1 (Windows):
+    - dfe-install.ps1 aceita -InstallDir e -EnableAppLogs (via menu interativo também).
+    - dfe-uninstall.ps1 aceita -InstallDir para que o JSON naquele local seja atualizado.
 
-O script fara:
-- validacoes (JAR / Java);
-- tentara baixar/extrair `nssm` se nao existir localmente;
-- instalar o servico via `nssm`;
-- definir DisplayName e gravar Description (se especificado) — o Description eh escrito no registro (Unicode-safe);
-- configurar AppDirectory, Start=Auto e tentar iniciar o servico;
-- registrar a execucao no log `script-install.log` (no InstallDir).
-
-Se `-EnableAppLogs` for passado, o script tambem:
-- criara `logs\stdout.log` e `logs\stderr.log`;
-- configurara `AppStdout` / `AppStderr` em nssm e `AppRotateFiles 1`.
-
-Logs:
-- instalacao: `<InstallDir>\script-install.log` (sempre criado)
-- nssm e output da aplicacao: `<InstallDir>\logs\stdout.log` e `<InstallDir>\logs\stderr.log` (apenas se `-EnableAppLogs` for usado)
-
----
-
-## 3 — Exemplo (comportamento automatizado que o script replica)
-
-Com valores hipoteticos:
-- InstallDir = `C:\Dfe-Converter`
-- Java = `C:\Dfe-Converter\java\bin\java.exe`
-- Jar = `DFe-Converter-QA.jar`
-- ServiceName = `DFeConverterQA`
-
-Comandos equivalentes (para referencia) — exemplo com logs habilitados:
-
-```powershell
-# instalar via nssm (executavel + argumentos)
-"C:\Dfe-Converter\nssm.exe" install DFeConverterQA "C:\Dfe-Converter\java\bin\java.exe" "-Dapp.headless=true -Djava.awt.headless=true -jar ""C:\Dfe-Converter\DFe-Converter-QA.jar"" --sync.config.file=""C:\Dfe-Converter\config.properties"""
-
-# definir DisplayName
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA DisplayName "DF-e Converter QA"
-
-# configurar diretorio da app e logs (esses dois ultimos so se habilitar logs)
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppDirectory "C:\Dfe-Converter"
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStdout "C:\Dfe-Converter\logs\stdout.log"
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStderr "C:\Dfe-Converter\logs\stderr.log"
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppRotateFiles 1
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA Start SERVICE_AUTO_START
-
-# iniciar o servico
-"C:\Dfe-Converter\nssm.exe" start DFeConverterQA
-```
-
-Se preferir que a saida seja explicitamente descartada em vez de nao configurar logs, voce pode configurar `AppStdout`/`AppStderr` para `NUL` (isso evita criacao de arquivos e acumulacao de logs).
-
----
-
-## 4 — Configurar Description com seguranca (Unicode-safe)
-
-O script grava Description diretamente no registro do servico (HKLM) para evitar problemas de encoding pela CLI. Se quiser definir manualmente:
-
-```powershell
-$ServiceName = "DFeConverterQA"
-$Description = "J2R Consultoria - Servico de conversao de documentos fiscais para o padrao da reforma tributaria."
-$regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
-
-# criar chave se necessario (deve existir apos nssm install)
-if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
-
-# gravar Description (Unicode)
-Set-ItemProperty -Path $regPath -Name Description -Value $Description -ErrorAction Stop
-
-# conferir
-Get-ItemProperty -Path $regPath -Name Description
-```
-
-Se preferir usar `sc.exe`:
-```powershell
-sc.exe description DFeConverterQA "J2R Consultoria - Servico de conversao..."
-```
-(atenção: `sc.exe` pode apresentar problemas de encoding dependendo do console).
-
----
-
-## 5 — Verificacao e diagnostico
-
-- Ver o status do servico:
-```powershell
-Get-Service -Name DFeConverterQA | Format-List *
-sc query DFeConverterQA
-```
-
-- Ver processo Java e linha de comando:
-```powershell
-Get-CimInstance Win32_Process -Filter "name='java.exe'" |
-  Where-Object { $_.CommandLine -match "DFe-Converter-QA" } |
-  Select-Object ProcessId, CommandLine | Format-List
-```
-
-- Ler logs criados por nssm (somente se `-EnableAppLogs` foi usado):
-```powershell
-Get-Content -Path "C:\Dfe-Converter\logs\stdout.log" -Tail 200 -Encoding UTF8
-Get-Content -Path "C:\Dfe-Converter\logs\stderr.log" -Tail 200 -Encoding UTF8
-```
-
-- Procurar logs da aplicacao:
-```powershell
-Get-ChildItem -Path "C:\Dfe-Converter" -Recurse -Filter *.log |
-  Sort-Object LastWriteTime -Descending | Select-Object -First 20 FullName, LastWriteTime
-```
-
-- Testar endpoint HTTP (se aplicavel):
-```powershell
-Invoke-WebRequest -Uri http://localhost:8080/actuator/health -UseBasicParsing -ErrorAction SilentlyContinue
-```
-
-- Gerar thread dump (se tiver jstack/jcmd):
-```powershell
-"C:\Dfe-Converter\java\bin\jstack" <PID> > "C:\Dfe-Converter\jstack.txt"
-```
-
----
-
-## 6 — Desinstalar o servico (interativo)
-
-Utilize `uninstall-service.ps1` (script interativo) ou, manualmente, os comandos abaixo.
-
-Principais diferencas do script de desinstalacao atual:
-- O script preserva sempre a pasta `java` local (nao sera removida).
-- O script remove automaticamente o campo `Description` do registro quando o servico eh removido.
-- O script pergunta se deve remover `nssm.exe` do diretorio da aplicacao (sim/nao).
-- Logs de desinstalacao: `<InstallDir>\uninstall-nssm-localjava.log`.
-
-Comandos manuais equivalentes:
-
-Via nssm:
-```powershell
-"C:\Dfe-Converter\nssm.exe" stop DFeConverterQA
-"C:\Dfe-Converter\nssm.exe" remove DFeConverterQA confirm
-```
-
-Via sc:
-```powershell
-sc stop DFeConverterQA
-sc delete DFeConverterQA
-```
-
-Remover Description do registro (o script faz isso automaticamente):
-```powershell
-Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DFeConverterQA" -Name Description -ErrorAction SilentlyContinue
-```
-
----
-
-## 7 — Procedimento manual completo (se NAO for usar o script)
-
-1. Copie sua aplicacao e `nssm.exe` para a pasta da app, por exemplo `C:\Dfe-Converter`.
-2. Abra PowerShell **Como Administrador**.
-3. (Opcional — somente se for usar logs) Crie a pasta de logs:
-```powershell
-New-Item -Path "C:\Dfe-Converter\logs" -ItemType Directory -Force
-```
-4. Instale o servico com nssm (exemplo):
-```powershell
-$java = "C:\Dfe-Converter\java\bin\java.exe"
-$jar  = "C:\Dfe-Converter\DFe-Converter-QA.jar"
-$args = '-Dapp.headless=true -Djava.awt.headless=true -jar "' + $jar + '" --sync.config.file="C:\Dfe-Converter\config.properties"'
-"C:\Dfe-Converter\nssm.exe" install DFeConverterQA $java $args
-```
-5. Configure DisplayName e AppDirectory / logs (logs somente se desejar):
-```powershell
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA DisplayName "DF-e Converter QA"
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppDirectory "C:\Dfe-Converter"
-# Somente se quiser logs:
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStdout "C:\Dfe-Converter\logs\stdout.log"
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppStderr "C:\Dfe-Converter\logs\stderr.log"
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA AppRotateFiles 1
-"C:\Dfe-Converter\nssm.exe" set DFeConverterQA Start SERVICE_AUTO_START
-```
-6. Inicie o servico:
-```powershell
-"C:\Dfe-Converter\nssm.exe" start DFeConverterQA
-```
-7. Verifique logs e status (veja a secao 5).
-
----
-
-## 8 — Troubleshooting rapido
-- Acesso negado: execute PowerShell como Administrador.
-- Script nao encontrou `java`: coloque JRE em `.\java\bin\java.exe` ou instale Java no sistema (`where java`).
-- `nssm.exe` ausente/falha: baixe manualmente de https://nssm.cc e coloque em `InstallDir`.
-- Texto com acentos corrompido em consoles antigos: salve `.ps1` em UTF-8 with BOM; se persistir, remova acentos nos textos do script (os scripts fornecidos usam mensagens ASCII).
-- Servico entra em Running mas app nao responde: ver `stderr.log`/`stdout.log` (se habilitado) e logs da app; verificar configuracao de porta.
-- Para detalhes, consulte `script-install.log` e `uninstall-nssm-localjava.log` no `InstallDir`.
-
----
-
-## 9 — Checklist resumido
-- [ ] Copiar JAR para `C:\Dfe-Converter`
-- [ ] (Opcional) Copiar JRE para `C:\Dfe-Converter\java\bin\java.exe`
-- [ ] Colocar `nssm.exe` em `C:\Dfe-Converter` (ou permitir download pelo script)
-- [ ] Abrir PowerShell como Administrador
-- [ ] Salvar `.ps1` em UTF-8 with BOM
-- [ ] Executar `.\install-service.ps1` (por padrao logs DESABILITADOS)  
-  - Use `.\install-service.ps1 -EnableAppLogs` para ativar os logs de stdout/stderr quando necessario
-- [ ] Verificar status e logs (se habilitados)
+Solução de problemas comum
+- "systemctl: not found" ou sistema não usa systemd:
+    - O instalador cria unidades systemd. Se o sistema não usa systemd, o instalador irá criar arquivos, mas não gerenciará o serviço automaticamente.
+- "nssm download falhou" (Windows):
+    - Verifique acesso à internet ou coloque `nssm.exe` manualmente no `InstallDir`.
+- PowerShell: "execution policy" ou permissão:
+    - Execute PowerShell como Administrador e use `-ExecutionPolicy Bypass` conforme mostrado.
