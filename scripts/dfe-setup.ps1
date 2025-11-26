@@ -1,11 +1,12 @@
 <#
 dfe-setup.ps1 - Menu interativo para instalar/remover/reinstalar (Windows)
+Versao: 1.0.6
 Execute em PowerShell como Administrador.
 #>
 [CmdletBinding()]
 param()
 
-$SCRIPT_VERSION = "1.0.6"
+$SCRIPT_VERSION = "1.0.7"
 $RawBase = "https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts"
 $BootstrapName = 'dfe-bootstrap.sh'
 $InstallScriptName = 'dfe-install.ps1'
@@ -70,14 +71,17 @@ function Download-ScriptToTemp {
     }
 }
 
-function Invoke-TempPS1 {
-    param([string]$TempPath)
+function Invoke-TempPS1WithInstallDir {
+    param(
+        [string]$TempPath,
+        [string]$InstallDir
+    )
     if (-not (Test-Path $TempPath)) {
         throw "Arquivo PS1 nao encontrado: $TempPath"
     }
     try {
-        Write-Host "Executando $TempPath"
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $TempPath
+        Write-Host "Executando $TempPath com InstallDir: $InstallDir"
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $TempPath -InstallDir $InstallDir
     } finally {
         if (Test-Path $TempPath) {
             Remove-Item -Force $TempPath -ErrorAction SilentlyContinue
@@ -103,6 +107,50 @@ function Normalize-ServiceName {
         if ($_ -match '[A-Za-z0-9\-_]') { $_ } else { '' }
     }
     return -join $chars
+}
+
+function Read-InstallDirectory {
+    while ($true) {
+        Write-Host ""
+        Write-Host "==========================================================" -ForegroundColor Yellow
+        Write-Host "         INFORME O DIRETORIO DE INSTALACAO                " -ForegroundColor Yellow
+        Write-Host "==========================================================" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Este diretorio deve conter:"
+        Write-Host "  - O arquivo JAR/EXE do DFe Converter"
+        Write-Host "  - O arquivo config.properties"
+        Write-Host "  - (Opcional) Pasta java\bin\java.exe"
+        Write-Host ""
+
+        $defaultDir = "C:\DFeConverter"
+        $dir = Read-Host "Diretorio de instalacao [$defaultDir]"
+
+        if ([string]::IsNullOrWhiteSpace($dir)) {
+            $dir = $defaultDir
+        }
+
+        $dir = $dir.Trim()
+
+        if (-not (Test-Path $dir)) {
+            Write-Host ""
+            Write-Host "AVISO: O diretorio '$dir' nao existe." -ForegroundColor Red
+            $create = Read-Host "Deseja criar este diretorio? (s/N)"
+            if ($create -match '^[sS]') {
+                try {
+                    New-Item -Path $dir -ItemType Directory -Force | Out-Null
+                    Write-Host "Diretorio criado com sucesso." -ForegroundColor Green
+                    return $dir
+                } catch {
+                    Write-Warning "Falha ao criar diretorio: $($_.Exception.Message)"
+                    continue
+                }
+            } else {
+                continue
+            }
+        }
+
+        return $dir
+    }
 }
 
 function Read-ServiceChoice {
@@ -147,13 +195,17 @@ function Read-Menu {
 
 function Do-Install {
     Write-Host ""
+
+    $installDir = Read-InstallDirectory
+
+    Write-Host ""
     Write-Host "Baixando instalador..." -ForegroundColor Cyan
     $tempInstall = Download-ScriptToTemp -Name $InstallScriptName
     if (-not $tempInstall) {
         Write-Error "Falha ao baixar instalador"
         return
     }
-    Invoke-TempPS1 -TempPath $tempInstall
+    Invoke-TempPS1WithInstallDir -TempPath $tempInstall -InstallDir $installDir
 }
 
 function Do-Uninstall {
@@ -164,7 +216,10 @@ function Do-Uninstall {
         Write-Error "Falha ao baixar desinstalador"
         return
     }
-    Invoke-TempPS1 -TempPath $tempUninstall
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $tempUninstall
+    if (Test-Path $tempUninstall) {
+        Remove-Item -Force $tempUninstall -ErrorAction SilentlyContinue
+    }
 }
 
 function Do-Status {
