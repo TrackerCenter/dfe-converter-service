@@ -6,7 +6,7 @@ Execute em PowerShell como Administrador.
 [CmdletBinding()]
 param()
 
-$SCRIPT_VERSION = "1. 0.0"
+$SCRIPT_VERSION = "1.0.5"
 $RawBase = "https://raw.githubusercontent. com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts"
 $BootstrapName = 'dfe-bootstrap. sh'
 $InstallScriptName = 'dfe-install.ps1'
