@@ -46,33 +46,16 @@ Raw URLs e robustez
 Exemplos de execução (one-liners)
 - Linux (menu, padrão):
   ```bash
-  sudo bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/main/scripts/dfe-setup.sh)
-  ```
-    - Se o raw do seu repositório estiver exposto via `refs/heads` (caso que você encontrou), também funciona:
-  ```bash
   sudo bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts/dfe-setup.sh)
-  ```
-    - Para garantir imutabilidade usando um commit SHA:
-  ```bash
-  sudo bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/<COMMIT_SHA>/scripts/dfe-setup.sh)
   ```
     - Rodar sem prompts para instalação automática de `jq`:
   ```bash
-  sudo AUTO_INSTALL_JQ=1 bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/main/scripts/dfe-setup.sh)
+  sudo AUTO_INSTALL_JQ=1 bash <(curl -sSL https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts/dfe-setup.sh)
   ```
 
 - Windows (PowerShell, execute como Administrador):
   ```powershell
-  iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/main/scripts/dfe-setup.ps1')
-  ```
-    - Alternativa com refs/heads:
-  ```powershell
   iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts/dfe-setup.ps1')
-  ```
-    - Usando uma base raw específica (commit/tag) via variável de ambiente no PowerShell:
-  ```powershell
-  $env:DFESCRIPTS_RAW_BASE = 'https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/<COMMIT_SHA>/scripts'
-  iex (New-Object Net.WebClient).DownloadString("$env:DFESCRIPTS_RAW_BASE/dfe-setup.ps1")
   ```
 
 Uso manual (Linux)

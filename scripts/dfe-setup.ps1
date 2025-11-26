@@ -1,19 +1,21 @@
 <#
 dfe-setup.ps1 - Menu interativo para instalar / remover /reinstalar (Windows)
-Suporta execução inline (iex (New-Object Net.WebClient).DownloadString(...)) ou execução a partir de arquivo.
-Se dfe-bootstrap.sh / dfe-install.ps1 / dfe-uninstall.ps1 não existir localmente, serão baixados do raw GitHub
-(tenta /main/... e /refs/heads/main/...). Você pode sobrescrever a base raw com DFESCRIPTS_RAW_BASE.
+Suporta execuçao inline (iex ...) ou execuçao a partir de arquivo.
+Se dfe-bootstrap.sh / dfe-install.ps1 / dfe-uninstall.ps1 nao existir localmente,
+serao baixados do raw GitHub (tenta /main/... e /refs/heads/main/...). Você pode
+sobrescrever a base raw com DFESCRIPTS_RAW_BASE.
+OBS: por segurança, o bootstrap (script .sh) nao é executado automaticamente quando
+rodando no Windows, a menos que você defina RUN_LINUX_BOOTSTRAP=1.
 Execute em PowerShell como Administrador.
 #>
 [CmdletBinding()]
 param()
 
 # ---------- Resolve ScriptDir de forma robusta ----------
-# Tenta usar PS-provided path variables; se não houver (ex: IE X), usa current location.
 $ScriptPath = $PSCommandPath
 if (-not $ScriptPath) { $ScriptPath = $MyInvocation.MyCommand.Path }
 if ([string]::IsNullOrWhiteSpace($ScriptPath)) {
-    # execução inline (iex). Use current location as fallback; marque que estamos inline.
+    # execuçao inline (iex). Use current location como fallback.
     $ScriptDir = (Get-Location).Path
     $RunningInline = $true
 } else {
@@ -41,12 +43,11 @@ function Ensure-Elevated {
 
 # ---------- Helpers para baixar scripts remotos ----------
 function Get-RemoteBaseCandidates {
-    # Retorna array de bases raw a tentar (permite override via DFESCRIPTS_RAW_BASE)
     if ($env:DFESCRIPTS_RAW_BASE) {
         return @($env:DFESCRIPTS_RAW_BASE.TrimEnd('/'))
     } else {
         $owner = "TrackerCenter"
-        $repo = "dfe-converter-service"
+        $repo  = "dfe-converter-service"
         $branch = "main"
         $base1 = "https://raw.githubusercontent.com/$owner/$repo/$branch/scripts"
         $base2 = "https://raw.githubusercontent.com/$owner/$repo/refs/heads/$branch/scripts"
@@ -55,17 +56,17 @@ function Get-RemoteBaseCandidates {
 }
 
 function Download-RemoteScript {
-    param(
-        [string]$Name
-    )
+    param([string]$Name)
     $bases = Get-RemoteBaseCandidates
-    $tmp = Join-Path $env:TEMP ("$Name." + [guid]::NewGuid().ToString())
+    # preserve extension: basename + GUID + extension, ex: dfe-uninstall.<guid>.ps1
+    $ext = [IO.Path]::GetExtension($Name)
+    $baseName = [IO.Path]::GetFileNameWithoutExtension($Name)
     foreach ($b in $bases) {
         $url = "$b/$Name"
+        $tmp = Join-Path $env:TEMP ("{0}.{1}{2}" -f $baseName, [guid]::NewGuid(), $ext)
         try {
-            Write-Verbose "Tentando baixar $url"
+            Write-Verbose "Tentando baixar $url -> $tmp"
             Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -ErrorAction Stop
-            Write-Verbose "Baixado: $tmp"
             return $tmp
         } catch {
             Write-Verbose "Falha ao baixar $url : $($_.Exception.Message)"
@@ -76,44 +77,63 @@ function Download-RemoteScript {
 }
 
 function Get-OrDownload-Script {
-    param(
-        [string]$Name
-    )
+    param([string]$Name)
     # prioriza arquivo local no mesmo diretório do script
     $localPath = Join-Path $ScriptDir $Name
     if (Test-Path $localPath) {
         Write-Verbose "Usando script local: $localPath"
         return $localPath
     }
-
-    # tenta baixar do raw Github
+    # tenta baixar
     $downloaded = Download-RemoteScript -Name $Name
     if ($downloaded) {
         Write-Verbose "Script baixado para $downloaded"
-        # se for ps1, garantir extensão .ps1 na temp e retorno do caminho
         return $downloaded
     }
-
     return $null
 }
 
-# ---------- Executores ----------
+# ---------- Funções de execuçao ----------
+function Convert-WindowsPathToBash ($winPath, $bashExePath) {
+    # Converte C:\Users\... para /c/Users/... (para msys/git-bash) ou /mnt/c/... (para WSL) conforme bashExePath
+    if ($winPath -match '^[A-Za-z]:(\\|/)') {
+        $drive = $winPath.Substring(0,1).ToLower()
+        $rest = $winPath.Substring(2) -replace '\\','/'
+        if ($bashExePath -match 'wsl' -or $bashExePath -match 'ubuntu' -or $bashExePath -match 'wsl.exe') {
+            return "/mnt/$drive/$rest"
+        } else {
+            return "/$drive/$rest"
+        }
+    } else {
+        return ($winPath -replace '\\','/')
+    }
+}
+
 function Run-LinuxBootstrap {
-    param(
-        [string]$BootstrapPath
-    )
+    param([string]$BootstrapPath)
     $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
     if (-not $bashCmd) {
-        Write-Warning "Não foi encontrado 'bash' no PATH. O bootstrap é um script POSIX (bash). Para instalar 'jq' em hosts Linux, execute o bootstrap em um host Linux ou instale jq manualmente."
+        Write-Warning "nao foi encontrado 'bash' no PATH. O bootstrap é um script POSIX (bash). Para instalar 'jq' em hosts Linux, execute o bootstrap em um host Linux ou instale jq manualmente."
         return $false
     }
 
+    # por segurança PADRaO: nao executar bootstrap automaticamente no Windows,
+    # a menos que a variável RUN_LINUX_BOOTSTRAP=1 esteja definida.
+    if ($env:RUN_LINUX_BOOTSTRAP -ne '1') {
+        Write-Host "Bootstrap detectado em $BootstrapPath, mas por padrao nao executarei scripts .sh no Windows."
+        Write-Host "Se desejar executar o bootstrap via bash no Windows, defina RUN_LINUX_BOOTSTRAP=1 (use com cuidado)."
+        return $false
+    }
+
+    # converter caminho para formato aceito pelo bash quando necessário
+    $posix = Convert-WindowsPathToBash $BootstrapPath $bashCmd.Path
+
     if ($env:AUTO_INSTALL_JQ -eq '1') {
         Write-Host "AUTO_INSTALL_JQ=1 detectado, executando bootstrap sem prompt (--yes)..."
-        & $bashCmd.Path $BootstrapPath --yes
+        & $bashCmd.Path $posix --yes
     } else {
-        Write-Host "Executando bootstrap (pode pedir confirmação para instalar dependências)..."
-        & $bashCmd.Path $BootstrapPath
+        Write-Host "Executando bootstrap (pode pedir confirmaçao para instalar dependências)..."
+        & $bashCmd.Path $posix
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -124,11 +144,9 @@ function Run-LinuxBootstrap {
 }
 
 function Invoke-RemoteOrLocal-PS1 {
-    param(
-        [string]$PathToPS1
-    )
+    param([string]$PathToPS1)
     if (-not (Test-Path $PathToPS1)) {
-        throw "Script PS1 não encontrado: $PathToPS1"
+        throw "Script PS1 nao encontrado: $PathToPS1"
     }
     Write-Host "Executando: $PathToPS1"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $PathToPS1
@@ -148,10 +166,9 @@ function Read-Menu {
 }
 
 function Do-Install {
-    # tenta usar local ou baixar
     $ps = Get-OrDownload-Script -Name $InstallScriptName
     if (-not $ps) {
-        Write-Error "Não foi possível localizar ou baixar $InstallScriptName. Coloque-o em $ScriptDir ou ajuste DFESCRIPTS_RAW_BASE."
+        Write-Error "nao foi possivel localizar ou baixar $InstallScriptName. Coloque-o em $ScriptDir ou ajuste DFESCRIPTS_RAW_BASE."
         return
     }
     Invoke-RemoteOrLocal-PS1 -PathToPS1 $ps
@@ -160,7 +177,7 @@ function Do-Install {
 function Do-Uninstall {
     $ps = Get-OrDownload-Script -Name $UninstallScriptName
     if (-not $ps) {
-        Write-Error "Não foi possível localizar ou baixar $UninstallScriptName. Coloque-o em $ScriptDir ou ajuste DFESCRIPTS_RAW_BASE."
+        Write-Error "nao foi possivel localizar ou baixar $UninstallScriptName. Coloque-o em $ScriptDir ou ajuste DFESCRIPTS_RAW_BASE."
         return
     }
     Invoke-RemoteOrLocal-PS1 -PathToPS1 $ps
@@ -175,29 +192,24 @@ function Do-Status {
 # ================== Entrypoint ===================
 Ensure-Elevated
 
-# Tenta obter/baixar bootstrap (local ou remote). Em ambientes IE X sem bash, o bootstrap pode ser ignorado.
+# Obter bootstrap (prioriza local, senao tenta baixar)
 $bootstrapPath = $null
 $bootstrapLocal = Join-Path $ScriptDir $BootstrapName
 if (Test-Path $bootstrapLocal) {
     $bootstrapPath = $bootstrapLocal
 } else {
-    try {
-        $bootstrapPath = Download-RemoteScript -Name $BootstrapName
-    } catch {
-        $bootstrapPath = $null
-    }
+    $bootstrapPath = Download-RemoteScript -Name $BootstrapName
 }
 
 if ($bootstrapPath) {
-    # executa via bash (se disponível)
     $ok = Run-LinuxBootstrap -BootstrapPath $bootstrapPath
     if (-not $ok) {
-        Write-Warning "Falha ao executar o bootstrap. Se você estiver em Windows e não precisa do bootstrap local, pode prosseguir com funcionalidades Windows."
+        Write-Warning "O bootstrap nao foi executado. Se você estiver em Windows e nao precisa do bootstrap local, pode prosseguir com funcionalidades Windows."
     } else {
         Write-Host "Bootstrap executado com sucesso."
     }
 } else {
-    Write-Host "dfe-bootstrap.sh não encontrado localmente e não foi possível baixar. Se precisar que o setup prepare hosts Linux, coloque dfe-bootstrap.sh em $ScriptDir ou defina DFESCRIPTS_RAW_BASE apontando para o raw correto."
+    Write-Host "dfe-bootstrap.sh nao encontrado localmente e nao foi possivel baixar. Se precisar que o setup prepare hosts Linux, coloque dfe-bootstrap.sh em $ScriptDir ou defina DFESCRIPTS_RAW_BASE apontando para o raw correto."
 }
 
 while ($true) {
