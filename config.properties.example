@@ -1,5 +1,5 @@
 # Configuração de inicialização
-sync.port=9595
+sync.port=9393
 
 # Intervalo da sincronização (min)
 sync.intervaloMinutos=15
