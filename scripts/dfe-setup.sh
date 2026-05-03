@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.2.0
+# Versao: 1.4.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.4.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RAW_BASE="${DFESCRIPTS_RAW_BASE:-https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts}"
+# RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
+# automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
+RAW_BASE="${DFESCRIPTS_RAW_BASE:-__TRACKER_BASE_URL__/api/v1/dfe-converter/versoes/setup/scripts/linux}"
 
 # Diretório temporário para scripts baixados da rede.
 # Usar nomes previsíveis (não mktemp por arquivo) garante que _state.sh
@@ -20,8 +22,12 @@ INSTALL_SCRIPT_NAME="dfe-install.sh"
 UNINSTALL_SCRIPT_NAME="dfe-uninstall.sh"
 UPDATE_SCRIPT_NAME="dfe-update.sh"
 
+DFE_AUTOUPDATE_SCRIPT="/usr/local/bin/dfe-autoupdate"
+DFE_AUTOUPDATE_LOG="/var/log/dfe-autoupdate.log"
+DFE_AUTOUPDATE_TAG="# dfe-autoupdate-managed"
+
 TRACKER_API_URL="${TRACKER_API_URL:-}"
-DFE_AMBIENTE="${DFE_AMBIENTE:-QA}"
+DFE_AMBIENTE="${DFE_AMBIENTE:-}"
 
 log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 
@@ -59,6 +65,70 @@ _http_get() {
     log "curl ou wget nao encontrado" >&2
     return 1
   fi
+}
+
+# Retorna o conteúdo de uma URL no stdout.
+_http_get_text() {
+  local url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url"
+  else
+    log "curl ou wget nao encontrado" >&2
+    return 1
+  fi
+}
+
+# Solicita ao usuário a URL do Tracker e o ambiente (QA/PROD/personalizado).
+# Define TRACKER_API_URL e DFE_AMBIENTE globalmente para toda a sessão.
+# Não faz nada se TRACKER_API_URL já estiver definida.
+ensure_api_url() {
+  if [[ -n "$TRACKER_API_URL" ]]; then
+    return 0
+  fi
+
+  echo ""
+  echo "=========================================================="
+  echo "          SELECIONAR AMBIENTE DO TRACKER"
+  echo "=========================================================="
+  echo ""
+  echo "  1) QA   - https://qa.trackercenter.com.br/app"
+  echo "  2) PROD - https://prod.trackercenter.com.br/app"
+  echo "  3) URL personalizada"
+  echo ""
+
+  local choice
+  while true; do
+    read -rp "Escolha (1-3): " choice
+    case "$choice" in
+      1)
+        TRACKER_API_URL="https://qa.trackercenter.com.br/app"
+        DFE_AMBIENTE="QA"
+        break
+        ;;
+      2)
+        TRACKER_API_URL="https://prod.trackercenter.com.br/app"
+        DFE_AMBIENTE="PROD"
+        break
+        ;;
+      3)
+        local custom_url custom_amb
+        read -rp "URL base do Tracker (ex: https://tracker.seudominio.com/app): " custom_url
+        TRACKER_API_URL="${custom_url%/}"
+        read -rp "Ambiente (QA/PROD) [QA]: " custom_amb
+        DFE_AMBIENTE="${custom_amb:-QA}"
+        DFE_AMBIENTE="${DFE_AMBIENTE^^}"
+        break
+        ;;
+      *)
+        echo "Opcao invalida. Escolha 1, 2 ou 3."
+        ;;
+    esac
+  done
+
+  echo ""
+  log "Ambiente: $DFE_AMBIENTE | URL: $TRACKER_API_URL"
 }
 
 # Baixa um script para $TMP_SCRIPTS/<nome> e garante que _state.sh também
@@ -134,7 +204,8 @@ show_menu() {
   5) Listar serviços dfe instalados
   6) Verificar atualização
   7) Baixar e atualizar JAR
-  8) Sair
+  8) Configurar auto-update
+  9) Sair
 
 EOF
 }
@@ -168,16 +239,44 @@ do_list_services() {
 }
 
 do_install() {
+  ensure_api_url || return 1
+
   local path
   path="$(get_script "$INSTALL_SCRIPT_NAME")"
-
   if [[ -z "$path" || ! -f "$path" ]]; then
     log "ERRO: instalador nao encontrado"
     return 1
   fi
 
+  # Busca metadados e baixa o JAR direto da API
+  log "Consultando versao disponivel em $TRACKER_API_URL..."
+  local info_text remote_versao remote_nome
+  info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${DFE_AMBIENTE}&tipo=JAR" 2>/dev/null || echo "")"
+
+  if [[ -z "$info_text" ]]; then
+    log "ERRO: nao foi possivel obter informacoes de versao. Verifique a URL e conectividade."
+    return 1
+  fi
+
+  remote_versao="$(echo "$info_text" | grep '^DFE_VERSAO=' | cut -d'=' -f2-)"
+  remote_nome="$(echo "$info_text" | grep '^DFE_NOME_ARQUIVO=' | cut -d'=' -f2-)"
+  remote_nome="${remote_nome:-DFe-Converter-${DFE_AMBIENTE}.jar}"
+
+  log "Baixando versao $remote_versao ($remote_nome)..."
+  local tmp_jar
+  tmp_jar="$(mktemp /tmp/dfe-jar-XXXXXX.jar)"
+
+  if ! _http_get "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/download?ambiente=${DFE_AMBIENTE}&tipo=JAR" "$tmp_jar"; then
+    rm -f "$tmp_jar"
+    log "ERRO: falha ao baixar o JAR"
+    return 1
+  fi
+
   log "Executando instalador"
-  bash "$path"
+  bash "$path" --jar-source "$tmp_jar" --ambiente "$DFE_AMBIENTE" --versao "${remote_versao:-}"
+  local rc=$?
+  rm -f "$tmp_jar"
+  return $rc
 }
 
 do_uninstall() {
@@ -216,13 +315,8 @@ do_status() {
 }
 
 do_check_update() {
-  if [[ -z "$TRACKER_API_URL" ]]; then
-    echo ""
-    echo "ATENÇÃO: TRACKER_API_URL não definida."
-    echo "  Defina com: export TRACKER_API_URL=https://tracker.seudominio.com"
-    echo "  Ou execute: TRACKER_API_URL=https://... sudo ./dfe-setup.sh"
-    return 1
-  fi
+  ensure_api_url || return 1
+
   local path
   path="$(get_script "$UPDATE_SCRIPT_NAME")"
   if [[ -z "$path" || ! -f "$path" ]]; then
@@ -235,12 +329,8 @@ do_check_update() {
 }
 
 do_update() {
-  if [[ -z "$TRACKER_API_URL" ]]; then
-    echo ""
-    echo "ATENÇÃO: TRACKER_API_URL não definida."
-    echo "  Defina com: export TRACKER_API_URL=https://tracker.seudominio.com"
-    return 1
-  fi
+  ensure_api_url || return 1
+
   local path
   path="$(get_script "$UPDATE_SCRIPT_NAME")"
   if [[ -z "$path" || ! -f "$path" ]]; then
@@ -249,6 +339,160 @@ do_update() {
   fi
   bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$DFE_AMBIENTE" --yes
   return $?
+}
+
+# ---------------------------------------------------------------------------
+# Auto-update via crontab
+# ---------------------------------------------------------------------------
+
+# Exibe o status atual do auto-update (cron entry + script configurado).
+_show_autoupdate_status() {
+  echo ""
+  echo "=========================================================="
+  echo "           STATUS DO AUTO-UPDATE"
+  echo "=========================================================="
+  echo ""
+  local current_cron
+  current_cron="$(crontab -l 2>/dev/null | grep "$DFE_AUTOUPDATE_TAG" || true)"
+  if [[ -n "$current_cron" ]]; then
+    local cron_expr
+    cron_expr="$(echo "$current_cron" | sed "s|${DFE_AUTOUPDATE_SCRIPT}.*||" | xargs)"
+    echo "  Status      : ATIVO"
+    echo "  Agendamento : $cron_expr"
+  else
+    echo "  Status      : INATIVO"
+  fi
+  if [[ -f "$DFE_AUTOUPDATE_SCRIPT" ]]; then
+    local configured_url configured_env
+    configured_url="$(grep '^TRACKER_API_URL=' "$DFE_AUTOUPDATE_SCRIPT" 2>/dev/null \
+      | cut -d'"' -f2 || true)"
+    configured_env="$(grep '^DFE_AMBIENTE=' "$DFE_AUTOUPDATE_SCRIPT" 2>/dev/null \
+      | cut -d'"' -f2 || true)"
+    echo "  Script      : $DFE_AUTOUPDATE_SCRIPT"
+    [[ -n "$configured_url" ]] && echo "  URL         : $configured_url"
+    [[ -n "$configured_env" ]] && echo "  Ambiente    : $configured_env"
+  fi
+  echo "  Log         : $DFE_AUTOUPDATE_LOG"
+  echo ""
+}
+
+# Gera o script wrapper /usr/local/bin/dfe-autoupdate com URL e ambiente fixos.
+_write_autoupdate_script() {
+  local gen_date
+  gen_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  cat > "$DFE_AUTOUPDATE_SCRIPT" <<AUTOUPDATE_EOF
+#!/usr/bin/env bash
+# Gerado automaticamente pelo dfe-setup.sh em ${gen_date}
+# Ambiente: ${DFE_AMBIENTE} | URL: ${TRACKER_API_URL}
+# Para reconfigurar execute: sudo dfe-setup (opcao 8)
+TRACKER_API_URL="${TRACKER_API_URL}"
+DFE_AMBIENTE="${DFE_AMBIENTE}"
+UPDATE_URL="${RAW_BASE}/dfe-update.sh"
+
+log_au() { printf '%s dfe-autoupdate %s\n' "\$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "\$*"; }
+
+log_au "Iniciando verificacao automatica (ambiente=\${DFE_AMBIENTE})..."
+
+tmpscript="\$(mktemp /tmp/dfe-update.XXXXXX.sh)"
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "\${UPDATE_URL}" -o "\${tmpscript}"
+elif command -v wget >/dev/null 2>&1; then
+  wget -qO "\${tmpscript}" "\${UPDATE_URL}"
+else
+  log_au "ERRO: curl ou wget nao encontrado"
+  exit 1
+fi
+
+chmod +x "\${tmpscript}"
+bash "\${tmpscript}" --api-url "\${TRACKER_API_URL}" --ambiente "\${DFE_AMBIENTE}" --yes
+rc=\$?
+rm -f "\${tmpscript}"
+log_au "Concluido (rc=\${rc})"
+exit \${rc}
+AUTOUPDATE_EOF
+  chmod +x "$DFE_AUTOUPDATE_SCRIPT"
+  log "Script gerado: $DFE_AUTOUPDATE_SCRIPT"
+}
+
+# Ativa o auto-update com a expressão cron informada.
+_set_autoupdate_cron() {
+  local cron_expr="$1" descr="$2"
+  _write_autoupdate_script
+  local cron_line="${cron_expr} ${DFE_AUTOUPDATE_SCRIPT} >> ${DFE_AUTOUPDATE_LOG} 2>&1 ${DFE_AUTOUPDATE_TAG}"
+  local tmp_cron
+  tmp_cron="$(mktemp)"
+  { crontab -l 2>/dev/null | grep -v "$DFE_AUTOUPDATE_TAG"; echo "$cron_line"; } > "$tmp_cron"
+  crontab "$tmp_cron"
+  rm -f "$tmp_cron"
+  echo ""
+  log "Auto-update ATIVADO: $descr"
+  echo "  Agendamento : $cron_expr"
+  echo "  Script      : $DFE_AUTOUPDATE_SCRIPT"
+  echo "  Log         : $DFE_AUTOUPDATE_LOG"
+}
+
+# Solicita uma expressão cron personalizada com exemplos.
+_set_autoupdate_cron_custom() {
+  echo ""
+  echo "  Formato: minuto hora dia-do-mes mes dia-da-semana"
+  echo ""
+  echo "  Exemplos:"
+  echo "    0 1 * * *    -> todos os dias as 01:00"
+  echo "    0 1 * * 1    -> toda segunda-feira as 01:00"
+  echo "    0 */6 * * *  -> a cada 6 horas"
+  echo "    0 2 1 * *    -> todo dia 1 do mes as 02:00"
+  echo "    30 3 * * 0,6 -> sabado e domingo as 03:30"
+  echo ""
+  local expr
+  read -rp "Expressao cron (5 campos): " expr
+  if [[ -z "$expr" ]]; then
+    echo "Cancelado."
+    return 0
+  fi
+  local field_count
+  field_count="$(echo "$expr" | awk '{print NF}')"
+  if [[ "$field_count" -ne 5 ]]; then
+    echo "ERRO: expressao deve ter 5 campos (minuto hora dia mes dia-semana)"
+    return 1
+  fi
+  _set_autoupdate_cron "$expr" "personalizado"
+}
+
+# Desativa o auto-update removendo a entrada do crontab.
+_remove_autoupdate_cron() {
+  local tmp_cron
+  tmp_cron="$(mktemp)"
+  crontab -l 2>/dev/null | grep -v "$DFE_AUTOUPDATE_TAG" > "$tmp_cron" || true
+  crontab "$tmp_cron"
+  rm -f "$tmp_cron"
+  local remove_script
+  read -rp "Remover tambem o script ${DFE_AUTOUPDATE_SCRIPT}? [s/N]: " remove_script
+  if [[ "${remove_script,,}" == "s" ]]; then
+    rm -f "$DFE_AUTOUPDATE_SCRIPT"
+    log "Script removido"
+  fi
+  log "Auto-update DESATIVADO"
+}
+
+do_autoupdate() {
+  ensure_api_url || return 1
+  _show_autoupdate_status
+  echo "  1) Ativar - Todo dia as 01:00"
+  echo "  2) Ativar - Toda segunda-feira as 01:00"
+  echo "  3) Ativar - Personalizado (expressao cron)"
+  echo "  4) Desativar auto-update"
+  echo "  5) Voltar"
+  echo ""
+  local choice
+  read -rp "Escolha (1-5): " choice
+  case "$choice" in
+    1) _set_autoupdate_cron "0 1 * * *" "todo dia as 01:00";;
+    2) _set_autoupdate_cron "0 1 * * 1" "toda segunda-feira as 01:00";;
+    3) _set_autoupdate_cron_custom;;
+    4) _remove_autoupdate_cron;;
+    5) return 0;;
+    *) echo "Opcao invalida";;
+  esac
 }
 
 ensure_root
@@ -268,7 +512,7 @@ log "Pronto."
 
 while true; do
   show_menu
-  read -rp "Escolha (1-8): " opt
+  read -rp "Escolha (1-9): " opt
   case "$opt" in
     1)
       do_install
@@ -298,6 +542,9 @@ while true; do
       do_update || true
       ;;
     8)
+      do_autoupdate || true
+      ;;
+    9)
       echo ""
       log "Encerrando"
       exit 0
