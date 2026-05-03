@@ -1,5 +1,23 @@
 # DFe Converter — Setup de serviço (dfe-setup)
 
+## ⚡ Início Rápido
+
+> Copie e cole diretamente no servidor. Não é necessário instalar nada.
+
+### Linux
+
+```bash
+bash <(curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup)
+```
+
+### Windows (PowerShell como Administrador)
+
+```powershell
+iex (iwr -useb https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup).Content
+```
+
+---
+
 Este repositório contém um conjunto de scripts para instalar, remover e gerenciar o serviço do DFe Converter em Linux (systemd) e Windows (nssm). O objetivo é oferecer um "setup" interativo e reutilizável, com registro do estado em um arquivo JSON por instalação.
 
 Arquivos principais
