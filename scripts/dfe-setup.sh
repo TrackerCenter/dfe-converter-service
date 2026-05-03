@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.4.0
+# Versao: 1.5.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.4.0"
+SCRIPT_VERSION="1.5.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
@@ -314,30 +314,137 @@ do_status() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Detecção de instalações existentes
+# ---------------------------------------------------------------------------
+
+# Retorna (um por linha) os diretórios onde há uma instalação do DFe Converter.
+# Verifica locais padrão + qualquer dir sob /opt com .dfe-setup.env.
+_find_dfe_installations() {
+  local -A seen=()
+  # Locais padrão conhecidos
+  for dir in /opt/DFE_CONVERTER_QA /opt/DFE_CONVERTER_PROD /opt/dfe-converter; do
+    if [[ -f "${dir}/.dfe-setup.env" ]] && [[ -z "${seen[$dir]+x}" ]]; then
+      seen[$dir]=1
+      echo "$dir"
+    fi
+  done
+  # Varredura geral em /opt (até 3 níveis)
+  while IFS= read -r envfile; do
+    local d
+    d="$(dirname "$envfile")"
+    if [[ -z "${seen[$d]+x}" ]]; then
+      seen[$d]=1
+      echo "$d"
+    fi
+  done < <(find /opt -maxdepth 3 -name ".dfe-setup.env" 2>/dev/null || true)
+}
+
+# Solicita ao usuário que selecione (ou informe) o diretório de instalação.
+# Imprime o diretório escolhido no stdout; retorna 1 se o usuário cancelar.
+_select_install_dir() {
+  local installations=()
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] && installations+=("$dir")
+  done < <(_find_dfe_installations)
+
+  if [[ ${#installations[@]} -eq 0 ]]; then
+    echo "" >&2
+    log "Nenhuma instalacao encontrada nos locais padrao (/opt)." >&2
+    local custom_dir
+    read -rp "Informe o diretorio de instalacao (vazio para cancelar): " custom_dir >&2
+    if [[ -z "$custom_dir" ]]; then
+      return 1
+    fi
+    echo "$custom_dir"
+    return 0
+  fi
+
+  if [[ ${#installations[@]} -eq 1 ]]; then
+    log "Instalacao encontrada: ${installations[0]}" >&2
+    echo "${installations[0]}"
+    return 0
+  fi
+
+  # Múltiplas instalações — deixa o usuário escolher
+  echo "" >&2
+  echo "  Instalacoes encontradas:" >&2
+  local i=1
+  for dir in "${installations[@]}"; do
+    local svc ver
+    svc="$(grep '^DFE_SERVICE_NAME=' "${dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || true)"
+    ver="$(grep  '^DFE_VERSAO='       "${dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || true)"
+    printf "  %d) %-40s  service=%-25s  versao=%s\n" \
+      "$i" "$dir" "${svc:-?}" "${ver:-?}" >&2
+    ((i++))
+  done
+  echo "" >&2
+  local choice
+  read -rp "Escolha a instalacao (1-${#installations[@]}): " choice >&2
+  local idx=$(( choice - 1 ))
+  if [[ $idx -lt 0 || $idx -ge ${#installations[@]} ]]; then
+    echo "Opcao invalida" >&2
+    return 1
+  fi
+  echo "${installations[$idx]}"
+}
+
 do_check_update() {
   ensure_api_url || return 1
+
+  # Listar todos os arquivos disponíveis na última versão
+  echo ""
+  echo "=========================================================="
+  echo "       ARQUIVOS DISPONIVEIS NA ULTIMA VERSAO"
+  echo "=========================================================="
+  echo ""
+  printf "  %-5s  %-35s  %-10s  %8s  %s\n" "TIPO" "NOME" "VERSAO" "TAMANHO" "DATA UPLOAD"
+  echo "  ---------------------------------------------------------------"
+  for tipo in JAR EXE; do
+    local info_text
+    info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${DFE_AMBIENTE}&tipo=${tipo}" 2>/dev/null || echo "")"
+    if [[ -n "$info_text" ]]; then
+      local remote_versao remote_nome remote_tamanho remote_data
+      remote_versao="$(echo "$info_text" | grep '^DFE_VERSAO='        | cut -d'=' -f2-)"
+      remote_nome="$(echo   "$info_text" | grep '^DFE_NOME_ARQUIVO='  | cut -d'=' -f2-)"
+      remote_tamanho="$(echo "$info_text" | grep '^DFE_TAMANHO_BYTES=' | cut -d'=' -f2-)"
+      remote_data="$(echo   "$info_text" | grep '^DFE_DATA_UPLOAD='   | cut -d'=' -f2-)"
+      printf "  %-5s  %-35s  %-10s  %5s MB  %s\n" \
+        "$tipo" "${remote_nome:-?}" "${remote_versao:-?}" \
+        "$(( ${remote_tamanho:-0} / 1048576 ))" "${remote_data:-?}"
+    else
+      printf "  %-5s  (nao disponivel)\n" "$tipo"
+    fi
+  done
+  echo ""
+
+  # Detectar instalações existentes para verificar se há atualização pendente
+  local install_dir
+  install_dir="$(_select_install_dir)" || return 0
 
   local path
   path="$(get_script "$UPDATE_SCRIPT_NAME")"
   if [[ -z "$path" || ! -f "$path" ]]; then
-    log "ERRO: dfe-update.sh não encontrado"
+    log "ERRO: dfe-update.sh nao encontrado"
     return 1
   fi
-  TRACKER_API_URL="$TRACKER_API_URL" DFE_AMBIENTE_ARG="$DFE_AMBIENTE" \
-    bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$DFE_AMBIENTE"
+  bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$DFE_AMBIENTE" --install-dir "$install_dir"
   return $?
 }
 
 do_update() {
   ensure_api_url || return 1
 
+  local install_dir
+  install_dir="$(_select_install_dir)" || return 0
+
   local path
   path="$(get_script "$UPDATE_SCRIPT_NAME")"
   if [[ -z "$path" || ! -f "$path" ]]; then
-    log "ERRO: dfe-update.sh não encontrado"
+    log "ERRO: dfe-update.sh nao encontrado"
     return 1
   fi
-  bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$DFE_AMBIENTE" --yes
+  bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$DFE_AMBIENTE" --install-dir "$install_dir" --yes
   return $?
 }
 
