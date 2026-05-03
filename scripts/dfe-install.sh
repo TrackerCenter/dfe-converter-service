@@ -9,14 +9,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./_state.sh
 source "${SCRIPT_DIR}/_state.sh"
 
-DEFAULT_SERVICE="dfe-converter-qa"
 DEFAULT_USER="dfeconv"
 DEFAULT_GROUP="$DEFAULT_USER"
-DEFAULT_INSTALL_DIR="/opt/DFE_CONVERTER_QA"
-DEFAULT_JAR_NAME="DFe-Converter-QA.jar"
 DEFAULT_CONFIG_NAME="config.properties"
 DEFAULT_JAVA_OPTS="-Dapp.headless=true"
 DEFAULT_LIMIT_NOFILE=65536
+
+# Os defaults de service/dir/jar são definidos após o parse de --ambiente
+DEFAULT_SERVICE=""
+DEFAULT_INSTALL_DIR=""
+DEFAULT_JAR_NAME=""
 
 AUTO_YES=false
 NO_START=false
@@ -60,6 +62,20 @@ while [[ $# -gt 0 ]]; do
     *)              echo "Opção desconhecida: $1"; print_help; exit 1;;
   esac
 done
+
+# Ajusta defaults de acordo com o ambiente selecionado
+case "${AMBIENTE_ARG^^}" in
+  PROD)
+    DEFAULT_SERVICE="${DEFAULT_SERVICE:-dfe-converter-prod}"
+    DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR:-/opt/DFE_CONVERTER_PROD}"
+    DEFAULT_JAR_NAME="${DEFAULT_JAR_NAME:-DFe-Converter-PROD.jar}"
+    ;;
+  *)
+    DEFAULT_SERVICE="${DEFAULT_SERVICE:-dfe-converter-qa}"
+    DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR:-/opt/DFE_CONVERTER_QA}"
+    DEFAULT_JAR_NAME="${DEFAULT_JAR_NAME:-DFe-Converter-QA.jar}"
+    ;;
+esac
 
 if [[ $EUID -ne 0 ]]; then
   echo "ERRO: execute como root (sudo)."
