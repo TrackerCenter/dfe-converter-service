@@ -22,6 +22,13 @@ sync.proxyBaseUrl=https://ws.h.dfe.mastersaf.com.br
 # - SALVAR_ERRO_E_SEGUIR: Salvar em pasta de erros e seguir com arquivo original
 sync.proxyEstrategiaErro=IGNORAR
 
+# Configuração de proxy de internet
+internet.proxy.enabled=false
+internet.proxy.host=proxy.example.com
+internet.proxy.port=81
+# internet.proxy.username=user
+# internet.proxy.password=secret
+
 # Pastas (separe por ;)
 nfe.pastas.sincronizacao=/dados/xmls;/var/integração/pastaB
 nfe.pasta.convertido=/dados/saida

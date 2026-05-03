@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# dfe-install.sh - Instalador idempotente para systemd (escreve <INSTALL_DIR>/.dfe-setup.json)
-# Requer: jq
+# dfe-install.sh - Instalador idempotente para systemd
+# Estado salvo em <INSTALL_DIR>/.dfe-setup.env (KEY=VALUE, sem jq)
 set -o errexit
 set -o nounset
 set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./_state.sh
+source "${SCRIPT_DIR}/_state.sh"
 
 DEFAULT_SERVICE="dfe-converter-qa"
 DEFAULT_USER="dfeconv"
@@ -20,79 +24,64 @@ FORCE=false
 JAR_SOURCE=""
 CONFIG_SOURCE=""
 INSTALL_DIR=""
+VERSAO_ARG=""
+AMBIENTE_ARG="QA"
 
 timestamp() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
 print_help() {
   cat <<EOF
-Uso: sudo $0 [--yes] [--install-dir PATH] [--jar-source PATH] [--config-source PATH] [--no-start] [--force] [-h]
+Uso: sudo $0 [--yes] [--install-dir PATH] [--jar-source PATH] [--config-source PATH]
+             [--versao VERSAO] [--ambiente QA|PROD] [--no-start] [--force] [-h]
 
 --yes            Aceita todos os defaults sem perguntas
---install-dir    Diretório de instalação (ex: /opt/DFE_CONVERTER_QA)
---jar-source     Caminho para o JAR de origem (obrigatório se não houver JAR no dir atual)
+--install-dir    Diretório de instalação
+--jar-source     Caminho para o JAR de origem
 --config-source  Caminho para config.properties (opcional)
+--versao         Versão do JAR (ex: 2.38) para registrar no estado
+--ambiente       QA ou PROD (padrão: QA)
 --no-start       Não iniciar/ativar o service após instalar
 --force          Sobrescrever unit/env sem perguntar
--h, --help       Mostra essa ajuda
+-h, --help       Mostra esta ajuda
 EOF
 }
 
-# args
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --yes) AUTO_YES=true; shift;;
-    --install-dir) INSTALL_DIR="$2"; shift 2;;
-    --jar-source) JAR_SOURCE="$2"; shift 2;;
+    --yes)          AUTO_YES=true; shift;;
+    --install-dir)  INSTALL_DIR="$2"; shift 2;;
+    --jar-source)   JAR_SOURCE="$2"; shift 2;;
     --config-source) CONFIG_SOURCE="$2"; shift 2;;
-    --no-start) NO_START=true; shift;;
-    --force) FORCE=true; shift;;
-    -h|--help) print_help; exit 0;;
-    *) echo "Opcao desconhecida: $1"; print_help; exit 1;;
+    --versao)       VERSAO_ARG="$2"; shift 2;;
+    --ambiente)     AMBIENTE_ARG="${2^^}"; shift 2;;
+    --no-start)     NO_START=true; shift;;
+    --force)        FORCE=true; shift;;
+    -h|--help)      print_help; exit 0;;
+    *)              echo "Opção desconhecida: $1"; print_help; exit 1;;
   esac
 done
 
 if [[ $EUID -ne 0 ]]; then
-  echo "ERRO: execute este script como root (sudo)."
-  exit 1
-fi
-
-if ! command -v jq >/dev/null 2>&1; then
-  cat >&2 <<'ERR'
-ERRO: este script usa 'jq' para manipular JSON.
-Instale jq primeiro. Exemplos:
-  Debian/Ubuntu: sudo apt-get update && sudo apt-get install -y jq
-  RHEL/CentOS: sudo dnf install -y jq  (ou yum install via EPEL)
-  Arch: sudo pacman -S jq
-
-Depois reexecute o instalador.
-ERR
+  echo "ERRO: execute como root (sudo)."
   exit 1
 fi
 
 ask_default() {
   local question="$1" default="$2" reply
-  if $AUTO_YES; then
-    echo "$default"
-    return 0
-  fi
+  if $AUTO_YES; then echo "$default"; return 0; fi
   read -rp "$question [$default]: " reply
-  if [[ -z "$reply" ]]; then
-    echo "$default"
-  else
-    echo "$reply"
-  fi
+  if [[ -z "$reply" ]]; then echo "$default"; else echo "$reply"; fi
 }
+
 ask_yesno() {
   local question="$1" default="$2" ans
-  if $AUTO_YES; then
-    [[ "$default" = "y" ]] && return 0 || return 1
-  fi
+  if $AUTO_YES; then [[ "$default" = "y" ]] && return 0 || return 1; fi
   while true; do
     read -rp "$question [$default] (y/n): " ans
     ans="${ans:-$default}"
     case "${ans,,}" in
       y|yes) return 0;;
-      n|no) return 1;;
+      n|no)  return 1;;
       *) echo "Resposta inválida (y/n)";;
     esac
   done
@@ -104,7 +93,7 @@ USER_NAME="$(ask_default 'Usuário do sistema para rodar o service' "$DEFAULT_US
 GROUP_NAME="$USER_NAME"
 INSTALL_DIR="$(ask_default 'Diretório de instalação' "${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}")"
 
-# JAR source required
+# JAR source
 if [[ -n "$JAR_SOURCE" ]]; then
   echo "Usando JAR informado via CLI: $JAR_SOURCE"
 else
@@ -120,28 +109,28 @@ else
   fi
 fi
 
-# Config source optional
+# Config source
 if [[ -n "$CONFIG_SOURCE" ]]; then
   echo "Usando config informado via CLI: $CONFIG_SOURCE"
 else
   if ask_yesno "Você possui um config.properties para copiar?" "y"; then
     while true; do
-      CONFIG_SOURCE="$(ask_default 'Caminho para o config (ou ENTER para pular)' "./$DEFAULT_CONFIG_NAME")"
+      CONFIG_SOURCE="$(ask_default 'Caminho para o config' "./$DEFAULT_CONFIG_NAME")"
       if [[ -z "$CONFIG_SOURCE" ]]; then CONFIG_SOURCE=""; break; fi
       if [[ -f "$CONFIG_SOURCE" ]]; then break; fi
-      echo "Arquivo de config não encontrado: $CONFIG_SOURCE"
-      ask_yesno "Tentar outro caminho?" "y" || { echo "Pulando cópia do config."; CONFIG_SOURCE=""; break; }
+      echo "Arquivo não encontrado: $CONFIG_SOURCE"
+      ask_yesno "Tentar outro caminho?" "y" || { CONFIG_SOURCE=""; break; }
     done
   else
     CONFIG_SOURCE=""
   fi
 fi
 
-JAR_NAME="$(ask_default 'Nome do JAR no destino (apenas nome do arquivo)' "$DEFAULT_JAR_NAME")"
-CONFIG_NAME="$(ask_default 'Nome do config no destino (apenas nome do arquivo)' "$DEFAULT_CONFIG_NAME")"
+JAR_NAME="$(ask_default 'Nome do JAR no destino' "$DEFAULT_JAR_NAME")"
+CONFIG_NAME="$(ask_default 'Nome do config no destino' "$DEFAULT_CONFIG_NAME")"
 JAVA_OPTS="$(ask_default 'JAVA_OPTS' "$DEFAULT_JAVA_OPTS")"
 
-# utility: sha/cmp
+# Checksum helpers
 sha256_of_file() {
   local f="$1"
   if command -v sha256sum >/dev/null 2>&1; then
@@ -152,6 +141,7 @@ sha256_of_file() {
     echo ""
   fi
 }
+
 file_differs() {
   local src="$1" dst="$2"
   if [[ ! -f "$dst" ]]; then return 0; fi
@@ -168,30 +158,28 @@ file_differs() {
     return 0
   fi
 }
+
 backup_if_exists() {
   local path="$1"
   if [[ -f "$path" ]]; then
     local b="${path}.bak.$(date +%s)"
-    echo "Fazendo backup de $path -> $b"
+    echo "Backup: $path -> $b"
     cp -p -- "$path" "$b"
   fi
 }
 
-# detect init
 detect_init() {
   if command -v systemctl >/dev/null 2>&1 && pidof systemd >/dev/null 2>&1; then
     echo "systemd"
   elif [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1; then
     echo "systemd"
-  elif command -v initctl >/dev/null 2>&1; then
-    echo "upstart"
   else
-    echo "sysv"
+    echo "other"
   fi
 }
 INIT_SYSTEM="$(detect_init)"
 
-# create group/user if missing
+# Create user/group if needed
 if ! getent group "$GROUP_NAME" >/dev/null 2>&1; then
   groupadd --system "$GROUP_NAME"
 fi
@@ -199,7 +187,6 @@ if ! id -u "$USER_NAME" >/dev/null 2>&1; then
   useradd --system --no-create-home --shell /sbin/nologin --gid "$GROUP_NAME" "$USER_NAME"
 fi
 
-# create install dir
 mkdir -p "$INSTALL_DIR"
 chown "$USER_NAME:$GROUP_NAME" "$INSTALL_DIR"
 chmod 0755 "$INSTALL_DIR"
@@ -212,8 +199,10 @@ if file_differs "$JAR_SOURCE" "$DEST_JAR"; then
   chmod 0550 "$DEST_JAR"
   JAR_CHANGED=true
 else
-  echo "JAR identico; nao sera copiado."
+  echo "JAR idêntico; não será copiado."
 fi
+
+JAR_CHECKSUM="$(sha256_of_file "$DEST_JAR" || echo "")"
 
 CONFIG_CHANGED=false
 if [[ -n "$CONFIG_SOURCE" ]]; then
@@ -224,11 +213,11 @@ if [[ -n "$CONFIG_SOURCE" ]]; then
     chmod 0640 "$DEST_CONFIG"
     CONFIG_CHANGED=true
   else
-    echo "Config identico; nao sera copiado."
+    echo "Config idêntico; não será copiado."
   fi
 fi
 
-# prepare /etc/default and unit (systemd)
+# systemd unit
 ENV_FILE="/etc/default/${SERVICE_NAME}"
 ENV_CONTENT="# /etc/default/${SERVICE_NAME}
 JAVA_CMD=
@@ -289,10 +278,8 @@ if [[ "$INIT_SYSTEM" == "systemd" ]]; then
   fi
 fi
 
-RELOAD_DAEMON=false
 if [[ "$INIT_SYSTEM" == "systemd" && ( "$UNIT_CHANGED" = true || "$ENV_CHANGED" = true ) ]]; then
   systemctl daemon-reload
-  RELOAD_DAEMON=true
 fi
 
 SERVICE_ACTIVE=false
@@ -313,53 +300,37 @@ if [[ "$INIT_SYSTEM" == "systemd" ]]; then
     fi
   fi
 else
-  echo "Sistema nao usa systemd; unidade criada mas nao gerenciada automaticamente."
+  echo "Sistema não usa systemd; unidade criada mas não gerenciada automaticamente."
 fi
 
-# --- JSON state management (per-install dir: <INSTALL_DIR>/.dfe-setup.json) ---
-CFG_FILE="${INSTALL_DIR%/}/.dfe-setup.json"
+# --- Save state to .dfe-setup.env (replaces old .dfe-setup.json) ---
+CFG_FILE="${INSTALL_DIR%/}/.dfe-setup.env"
+_state_init "$CFG_FILE"
+JAVA_PATH="$(command -v java || echo '')"
+INSTALLED_BY="${SUDO_USER:-$(whoami)}"
 
-# build record JSON (compact)
-installedBy="${SUDO_USER:-$(whoami)}"
-installedAt="$(timestamp)"
-javapath="$(command -v java || echo '')"
-
-record=$(jq -n \
-  --arg serviceName "$SERVICE_NAME" \
-  --arg jarName "$JAR_NAME" \
-  --arg configName "$CONFIG_NAME" \
-  --arg javaPath "$javapath" \
-  --arg installDir "$INSTALL_DIR" \
-  --arg installedAt "$installedAt" \
-  --arg installedBy "$installedBy" \
-  --arg os "linux" \
-  '{serviceName:$serviceName, jarName:$jarName, configName:$configName, javaPath:$javaPath, logsEnabled:false, installDir:$installDir, installedAt:$installedAt, installedBy:$installedBy, os:$os }')
-
-# Add or update using jq
-if [[ -f "$CFG_FILE" ]]; then
-  tmpf=$(mktemp)
-  jq --argjson rec "$record" \
-    '
-    .installations |= ( ( . // [] ) as $inst
-      | ( $inst
-          | map( if (.serviceName == $rec.serviceName or .jarName == $rec.jarName) then $rec else . end )
-        ) as $mapped
-      | if ($mapped | length) == ($inst | length) then ($inst + [$rec]) else $mapped end
-    )
-    ' "$CFG_FILE" > "$tmpf" && mv "$tmpf" "$CFG_FILE"
-else
-  printf '{"installations":[%s]}\n' "$record" > "$CFG_FILE"
-fi
+_state_write DFE_SERVICE_NAME  "$SERVICE_NAME"   "$CFG_FILE"
+_state_write DFE_JAR_NAME      "$JAR_NAME"       "$CFG_FILE"
+_state_write DFE_CONFIG_NAME   "$CONFIG_NAME"    "$CFG_FILE"
+_state_write DFE_JAVA_PATH     "$JAVA_PATH"      "$CFG_FILE"
+_state_write DFE_LOGS_ENABLED  "false"           "$CFG_FILE"
+_state_write DFE_INSTALL_DIR   "$INSTALL_DIR"    "$CFG_FILE"
+_state_write DFE_INSTALLED_AT  "$(timestamp)"    "$CFG_FILE"
+_state_write DFE_INSTALLED_BY  "$INSTALLED_BY"   "$CFG_FILE"
+_state_write DFE_OS            "linux"           "$CFG_FILE"
+_state_write DFE_VERSAO        "${VERSAO_ARG:-}" "$CFG_FILE"
+_state_write DFE_AMBIENTE      "$AMBIENTE_ARG"   "$CFG_FILE"
+_state_write DFE_CHECKSUM_SHA256 "$JAR_CHECKSUM" "$CFG_FILE"
 
 echo
 echo "Resumo:"
-echo " Service: ${SERVICE_NAME}"
-echo " Install dir: ${INSTALL_DIR}"
-echo " JAR changed: ${JAR_CHANGED}"
+echo " Service:        ${SERVICE_NAME}"
+echo " Install dir:    ${INSTALL_DIR}"
+echo " JAR changed:    ${JAR_CHANGED}"
 echo " Config changed: ${CONFIG_CHANGED}"
-echo " Unit created/changed: ${UNIT_CHANGED}"
-echo " Env changed: ${ENV_CHANGED}"
-echo " JSON state: ${CFG_FILE}"
+echo " Unit changed:   ${UNIT_CHANGED}"
+echo " Env changed:    ${ENV_CHANGED}"
+echo " Estado:         ${CFG_FILE}"
 echo
-echo "Concluido."
+echo "Concluído."
 exit 0
