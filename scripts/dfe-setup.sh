@@ -48,6 +48,7 @@ ensure_root() {
 }
 
 # Baixa um único arquivo para o destino informado.
+# Toda saída vai para stderr para não contaminar capturas via $().
 _http_get() {
   local url="$1" dest="$2"
   if command -v curl >/dev/null 2>&1; then
@@ -55,18 +56,19 @@ _http_get() {
   elif command -v wget >/dev/null 2>&1; then
     wget -qO "$dest" "$url"
   else
-    log "curl ou wget nao encontrado"
+    log "curl ou wget nao encontrado" >&2
     return 1
   fi
 }
 
 # Baixa um script para $TMP_SCRIPTS/<nome> e garante que _state.sh também
 # esteja disponível no mesmo diretório (dependência de todos os scripts).
+# Apenas o caminho final é impresso no stdout; logs vão para stderr.
 download_script() {
   local name="$1"
   local dest="${TMP_SCRIPTS}/${name}"
 
-  log "Baixando ${RAW_BASE}/${name}"
+  log "Baixando ${RAW_BASE}/${name}" >&2
   if ! _http_get "${RAW_BASE}/${name}" "$dest"; then
     rm -f "$dest"
     return 1
@@ -75,9 +77,9 @@ download_script() {
 
   # _state.sh precisa estar no mesmo dir que os scripts que fazem `source` dele
   if [[ "$name" != "_state.sh" && ! -f "${TMP_SCRIPTS}/_state.sh" ]]; then
-    log "Baixando ${RAW_BASE}/_state.sh (dependencia)"
+    log "Baixando ${RAW_BASE}/_state.sh (dependencia)" >&2
     _http_get "${RAW_BASE}/_state.sh" "${TMP_SCRIPTS}/_state.sh" || \
-      log "AVISO: nao foi possivel baixar _state.sh"
+      log "AVISO: nao foi possivel baixar _state.sh" >&2
     chmod +x "${TMP_SCRIPTS}/_state.sh" 2>/dev/null || true
   fi
 
@@ -86,12 +88,13 @@ download_script() {
 
 # Retorna o caminho do script: local (SCRIPT_DIR) tem prioridade,
 # depois cache TMP_SCRIPTS, por último baixa da rede.
+# Apenas o caminho é impresso no stdout; logs vão para stderr.
 get_script() {
   local name="$1"
   local local_path="${SCRIPT_DIR}/${name}"
 
   if [[ -f "$local_path" ]]; then
-    log "Usando local: $local_path"
+    log "Usando local: $local_path" >&2
     echo "$local_path"
     return 0
   fi
