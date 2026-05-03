@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.1.1
+# Versao: 1.2.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.1.1"
+SCRIPT_VERSION="1.2.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAW_BASE="${DFESCRIPTS_RAW_BASE:-https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts}"
 
@@ -131,14 +131,41 @@ show_menu() {
   2) Remover service
   3) Reinstalar
   4) Status do service
-  5) Verificar atualização
-  6) Baixar e atualizar JAR
-  7) Sair
+  5) Listar serviços dfe instalados
+  6) Verificar atualização
+  7) Baixar e atualizar JAR
+  8) Sair
 
 EOF
 }
 
-do_install() {
+do_list_services() {
+  echo ""
+  echo "=========================================================="
+  echo "           SERVIÇOS dfe-* INSTALADOS"
+  echo "=========================================================="
+  echo ""
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemctl não disponível"
+    return
+  fi
+
+  # Lista todos os units dfe-* carregados (ativos ou não)
+  local found
+  found="$(systemctl list-units --type=service --all --no-legend --no-pager 2>/dev/null \
+    | grep -i 'dfe-' || true)"
+
+  if [[ -z "$found" ]]; then
+    echo "  Nenhum serviço dfe-* encontrado."
+  else
+    printf "  %-40s %-12s %-10s %s\n" "SERVIÇO" "STATUS" "ATIVO" "DESCRIÇÃO"
+    echo "  -----------------------------------------------------------------------"
+    while IFS= read -r line; do
+      printf "  %s\n" "$line"
+    done <<< "$found"
+  fi
+  echo ""
+}
   local path
   path="$(get_script "$INSTALL_SCRIPT_NAME")"
 
@@ -239,7 +266,7 @@ log "Pronto."
 
 while true; do
   show_menu
-  read -rp "Escolha (1-7): " opt
+  read -rp "Escolha (1-8): " opt
   case "$opt" in
     1)
       do_install
@@ -260,12 +287,15 @@ while true; do
       do_status
       ;;
     5)
-      do_check_update || true
+      do_list_services
       ;;
     6)
-      do_update || true
+      do_check_update || true
       ;;
     7)
+      do_update || true
+      ;;
+    8)
       echo ""
       log "Encerrando"
       exit 0
