@@ -36,21 +36,11 @@ check_systemctl() {
   fi
 }
 
-# jq é opcional agora - somente aviso, não falha
-check_jq_optional() {
-  if command -v jq >/dev/null 2>&1; then
-    log "INFO: jq encontrado (não necessário, mas disponível)"
-  else
-    log "INFO: jq não encontrado (não é necessário para esta versão dos scripts)"
-  fi
-}
-
 main() {
   log "Verificando dependências..."
   check_downloader || exit 1
   check_sha256
   check_systemctl
-  check_jq_optional
   log "Dependências OK."
   exit 0
 }

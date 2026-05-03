@@ -120,8 +120,8 @@ run_bootstrap() {
   bash "$path"
 }
 
-read_menu() {
-  cat <<EOF
+show_menu() {
+  cat >&2 <<EOF
 
 ==========================================================
                     MENU PRINCIPAL
@@ -136,8 +136,6 @@ read_menu() {
   7) Sair
 
 EOF
-  read -rp "Escolha (1-7): " choice
-  echo "$choice"
 }
 
 do_install() {
@@ -240,7 +238,8 @@ fi
 log "Pronto."
 
 while true; do
-  opt="$(read_menu)"
+  show_menu
+  read -rp "Escolha (1-7): " opt
   case "$opt" in
     1)
       do_install
