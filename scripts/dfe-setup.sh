@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.5.0
+# Versao: 1.6.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.5.0"
+SCRIPT_VERSION="1.6.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
@@ -351,12 +351,19 @@ _select_install_dir() {
   if [[ ${#installations[@]} -eq 0 ]]; then
     echo "" >&2
     log "Nenhuma instalacao encontrada nos locais padrao (/opt)." >&2
+    log "  Use a opcao 1 (Instalar service) para instalar o DFe Converter." >&2
     local custom_dir
-    read -rp "Informe o diretorio de instalacao (vazio para cancelar): " custom_dir >&2
+    read -rp "Informe o diretorio com instalacao existente (vazio para cancelar): " custom_dir >&2
     if [[ -z "$custom_dir" ]]; then
       return 1
     fi
-    echo "$custom_dir"
+    if [[ ! -f "${custom_dir%/}/.dfe-setup.env" ]]; then
+      echo "" >&2
+      log "AVISO: '${custom_dir}' nao possui instalacao DFe (.dfe-setup.env nao encontrado)." >&2
+      log "       Instale o DFe Converter primeiro (opcao 1 do menu)." >&2
+      return 1
+    fi
+    echo "${custom_dir%/}"
     return 0
   fi
 
@@ -436,7 +443,16 @@ do_update() {
   ensure_api_url || return 1
 
   local install_dir
-  install_dir="$(_select_install_dir)" || return 0
+  if ! install_dir="$(_select_install_dir)"; then
+    echo ""
+    log "Nenhuma instalacao valida encontrada."
+    local yn
+    read -rp "Deseja realizar a instalacao inicial agora? [S/n]: " yn
+    case "${yn,,}" in
+      ''|s|y|yes|sim) do_install; return $?;;
+      *) return 0;;
+    esac
+  fi
 
   local path
   path="$(get_script "$UPDATE_SCRIPT_NAME")"
