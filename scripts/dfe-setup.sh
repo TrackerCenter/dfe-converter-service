@@ -166,6 +166,8 @@ do_list_services() {
   fi
   echo ""
 }
+
+do_install() {
   local path
   path="$(get_script "$INSTALL_SCRIPT_NAME")"
 
