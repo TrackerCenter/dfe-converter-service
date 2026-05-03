@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.2.0
+# Versao: 1.3.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.3.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RAW_BASE="${DFESCRIPTS_RAW_BASE:-https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts}"
+# RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
+# automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
+RAW_BASE="${DFESCRIPTS_RAW_BASE:-__TRACKER_BASE_URL__/api/v1/dfe-converter/versoes/setup/scripts/linux}"
 
 # Diretório temporário para scripts baixados da rede.
 # Usar nomes previsíveis (não mktemp por arquivo) garante que _state.sh
@@ -21,7 +23,7 @@ UNINSTALL_SCRIPT_NAME="dfe-uninstall.sh"
 UPDATE_SCRIPT_NAME="dfe-update.sh"
 
 TRACKER_API_URL="${TRACKER_API_URL:-}"
-DFE_AMBIENTE="${DFE_AMBIENTE:-QA}"
+DFE_AMBIENTE="${DFE_AMBIENTE:-}"
 
 log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 
@@ -59,6 +61,70 @@ _http_get() {
     log "curl ou wget nao encontrado" >&2
     return 1
   fi
+}
+
+# Retorna o conteúdo de uma URL no stdout.
+_http_get_text() {
+  local url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url"
+  else
+    log "curl ou wget nao encontrado" >&2
+    return 1
+  fi
+}
+
+# Solicita ao usuário a URL do Tracker e o ambiente (QA/PROD/personalizado).
+# Define TRACKER_API_URL e DFE_AMBIENTE globalmente para toda a sessão.
+# Não faz nada se TRACKER_API_URL já estiver definida.
+ensure_api_url() {
+  if [[ -n "$TRACKER_API_URL" ]]; then
+    return 0
+  fi
+
+  echo ""
+  echo "=========================================================="
+  echo "          SELECIONAR AMBIENTE DO TRACKER"
+  echo "=========================================================="
+  echo ""
+  echo "  1) QA   - https://qa.trackercenter.com.br/app"
+  echo "  2) PROD - https://prod.trackercenter.com.br/app"
+  echo "  3) URL personalizada"
+  echo ""
+
+  local choice
+  while true; do
+    read -rp "Escolha (1-3): " choice
+    case "$choice" in
+      1)
+        TRACKER_API_URL="https://qa.trackercenter.com.br/app"
+        DFE_AMBIENTE="QA"
+        break
+        ;;
+      2)
+        TRACKER_API_URL="https://prod.trackercenter.com.br/app"
+        DFE_AMBIENTE="PROD"
+        break
+        ;;
+      3)
+        local custom_url custom_amb
+        read -rp "URL base do Tracker (ex: https://tracker.seudominio.com/app): " custom_url
+        TRACKER_API_URL="${custom_url%/}"
+        read -rp "Ambiente (QA/PROD) [QA]: " custom_amb
+        DFE_AMBIENTE="${custom_amb:-QA}"
+        DFE_AMBIENTE="${DFE_AMBIENTE^^}"
+        break
+        ;;
+      *)
+        echo "Opcao invalida. Escolha 1, 2 ou 3."
+        ;;
+    esac
+  done
+
+  echo ""
+  log "Ambiente: $DFE_AMBIENTE | URL: $TRACKER_API_URL"
 }
 
 # Baixa um script para $TMP_SCRIPTS/<nome> e garante que _state.sh também
@@ -168,16 +234,44 @@ do_list_services() {
 }
 
 do_install() {
+  ensure_api_url || return 1
+
   local path
   path="$(get_script "$INSTALL_SCRIPT_NAME")"
-
   if [[ -z "$path" || ! -f "$path" ]]; then
     log "ERRO: instalador nao encontrado"
     return 1
   fi
 
+  # Busca metadados e baixa o JAR direto da API
+  log "Consultando versao disponivel em $TRACKER_API_URL..."
+  local info_text remote_versao remote_nome
+  info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${DFE_AMBIENTE}&tipo=JAR" 2>/dev/null || echo "")"
+
+  if [[ -z "$info_text" ]]; then
+    log "ERRO: nao foi possivel obter informacoes de versao. Verifique a URL e conectividade."
+    return 1
+  fi
+
+  remote_versao="$(echo "$info_text" | grep '^DFE_VERSAO=' | cut -d'=' -f2-)"
+  remote_nome="$(echo "$info_text" | grep '^DFE_NOME_ARQUIVO=' | cut -d'=' -f2-)"
+  remote_nome="${remote_nome:-DFe-Converter-${DFE_AMBIENTE}.jar}"
+
+  log "Baixando versao $remote_versao ($remote_nome)..."
+  local tmp_jar
+  tmp_jar="$(mktemp /tmp/dfe-jar-XXXXXX.jar)"
+
+  if ! _http_get "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/download?ambiente=${DFE_AMBIENTE}&tipo=JAR" "$tmp_jar"; then
+    rm -f "$tmp_jar"
+    log "ERRO: falha ao baixar o JAR"
+    return 1
+  fi
+
   log "Executando instalador"
-  bash "$path"
+  bash "$path" --jar-source "$tmp_jar" --ambiente "$DFE_AMBIENTE" --versao "${remote_versao:-}"
+  local rc=$?
+  rm -f "$tmp_jar"
+  return $rc
 }
 
 do_uninstall() {
@@ -216,13 +310,8 @@ do_status() {
 }
 
 do_check_update() {
-  if [[ -z "$TRACKER_API_URL" ]]; then
-    echo ""
-    echo "ATENÇÃO: TRACKER_API_URL não definida."
-    echo "  Defina com: export TRACKER_API_URL=https://tracker.seudominio.com"
-    echo "  Ou execute: TRACKER_API_URL=https://... sudo ./dfe-setup.sh"
-    return 1
-  fi
+  ensure_api_url || return 1
+
   local path
   path="$(get_script "$UPDATE_SCRIPT_NAME")"
   if [[ -z "$path" || ! -f "$path" ]]; then
@@ -235,12 +324,8 @@ do_check_update() {
 }
 
 do_update() {
-  if [[ -z "$TRACKER_API_URL" ]]; then
-    echo ""
-    echo "ATENÇÃO: TRACKER_API_URL não definida."
-    echo "  Defina com: export TRACKER_API_URL=https://tracker.seudominio.com"
-    return 1
-  fi
+  ensure_api_url || return 1
+
   local path
   path="$(get_script "$UPDATE_SCRIPT_NAME")"
   if [[ -z "$path" || ! -f "$path" ]]; then
