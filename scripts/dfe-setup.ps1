@@ -1,16 +1,20 @@
 <#
 dfe-setup.ps1 - Menu interativo para instalar/remover/reinstalar (Windows)
-Versao: 1.0.6
+Versao: 1.1.0
 Execute em PowerShell como Administrador.
 #>
 [CmdletBinding()]
 param()
 
-$SCRIPT_VERSION = "1.0.8"
+$SCRIPT_VERSION = "1.1.0"
 $RawBase = "https://raw.githubusercontent.com/TrackerCenter/dfe-converter-service/refs/heads/main/scripts"
 $BootstrapName = 'dfe-bootstrap.sh'
 $InstallScriptName = 'dfe-install.ps1'
 $UninstallScriptName = 'dfe-uninstall.ps1'
+$UpdateScriptName = 'dfe-update.ps1'
+
+$TrackerApiUrl = if ($env:TRACKER_API_URL) { $env:TRACKER_API_URL } else { "" }
+$DfeAmbiente = if ($env:DFE_AMBIENTE) { $env:DFE_AMBIENTE } else { "QA" }
 
 $ScriptPath = $PSCommandPath
 if (-not $ScriptPath) { $ScriptPath = $MyInvocation.MyCommand.Path }
@@ -187,9 +191,11 @@ function Read-Menu {
     Write-Host "  2) Remover service"
     Write-Host "  3) Reinstalar"
     Write-Host "  4) Status do service"
-    Write-Host "  5) Sair"
+    Write-Host "  5) Verificar atualização"
+    Write-Host "  6) Baixar e atualizar EXE"
+    Write-Host "  7) Sair"
     Write-Host ""
-    $choice = Read-Host "Escolha (1-5)"
+    $choice = Read-Host "Escolha (1-7)"
     return $choice
 }
 
@@ -246,6 +252,48 @@ function Do-Status {
     }
 }
 
+function Do-CheckUpdate {
+    if ([string]::IsNullOrWhiteSpace($TrackerApiUrl)) {
+        Write-Host ""
+        Write-Host "ATENÇÃO: TRACKER_API_URL não definida." -ForegroundColor Yellow
+        Write-Host "  Defina com: `$env:TRACKER_API_URL = 'https://tracker.seudominio.com'" -ForegroundColor Yellow
+        return
+    }
+    $localPath = Join-Path $ScriptDir $UpdateScriptName
+    if (Test-Path $localPath) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $localPath -ApiUrl $TrackerApiUrl -Ambiente $DfeAmbiente
+    } else {
+        $tempUpdate = Download-ScriptToTemp -Name $UpdateScriptName
+        if (-not $tempUpdate) { Write-Error "Falha ao baixar $UpdateScriptName"; return }
+        try {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $tempUpdate -ApiUrl $TrackerApiUrl -Ambiente $DfeAmbiente
+        } finally {
+            if (Test-Path $tempUpdate) { Remove-Item -Force $tempUpdate -ErrorAction SilentlyContinue }
+        }
+    }
+}
+
+function Do-Update {
+    if ([string]::IsNullOrWhiteSpace($TrackerApiUrl)) {
+        Write-Host ""
+        Write-Host "ATENÇÃO: TRACKER_API_URL não definida." -ForegroundColor Yellow
+        Write-Host "  Defina com: `$env:TRACKER_API_URL = 'https://tracker.seudominio.com'" -ForegroundColor Yellow
+        return
+    }
+    $localPath = Join-Path $ScriptDir $UpdateScriptName
+    if (Test-Path $localPath) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $localPath -ApiUrl $TrackerApiUrl -Ambiente $DfeAmbiente -Yes
+    } else {
+        $tempUpdate = Download-ScriptToTemp -Name $UpdateScriptName
+        if (-not $tempUpdate) { Write-Error "Falha ao baixar $UpdateScriptName"; return }
+        try {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $tempUpdate -ApiUrl $TrackerApiUrl -Ambiente $DfeAmbiente -Yes
+        } finally {
+            if (Test-Path $tempUpdate) { Remove-Item -Force $tempUpdate -ErrorAction SilentlyContinue }
+        }
+    }
+}
+
 Ensure-Elevated
 Show-Banner
 
@@ -278,6 +326,14 @@ while ($true) {
             break
         }
         '5' {
+            Do-CheckUpdate
+            break
+        }
+        '6' {
+            Do-Update
+            break
+        }
+        '7' {
             Write-Host ""
             Write-Host "Encerrando.  Ate logo!" -ForegroundColor Green
             Write-Host ""
