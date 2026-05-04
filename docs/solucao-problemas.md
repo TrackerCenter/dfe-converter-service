@@ -13,14 +13,23 @@ systemd: dfe-converter-qa.service: Main process exited, code=exited, status=127
 
 **Causa:** Java não está instalado ou não está no `PATH` do ambiente systemd.
 
-**Solução:**
+**Solução preferida — reinstalar via setup (baixa Java automaticamente):**
+
+```bash
+sudo bash <(curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup)
+# Escolha opção 3) Reinstalar → o setup detecta Java ausente e oferece download automático do Zulu Java 8
+```
+
+O Java fica em `<install_dir>/java/` e o serviço é configurado para usá-lo automaticamente.
+
+**Solução manual — instalar Java no sistema:**
 
 ```bash
 # Debian/Ubuntu
 sudo apt-get update && sudo apt-get install -y default-jre-headless
 
 # RHEL/CentOS 8+
-sudo dnf install -y java-17-openjdk-headless
+sudo dnf install -y java-1.8.0-openjdk-headless
 
 # Verificar instalação
 java -version
@@ -30,9 +39,9 @@ sudo systemctl restart dfe-converter-qa
 ```
 
 > O systemd não herda o `PATH` do usuário. Se o Java estiver em um diretório não padrão,
-> edite a unit file em `/etc/systemd/system/dfe-converter-qa.service` e adicione:
+> edite `/etc/default/dfe-converter-qa` e ajuste:
 > ```
-> Environment=JAVA_CMD=/caminho/para/java
+> JAVA_CMD=/caminho/para/bin/java
 > ```
 > Após editar: `sudo systemctl daemon-reload && sudo systemctl restart dfe-converter-qa`
 

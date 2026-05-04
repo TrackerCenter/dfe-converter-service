@@ -10,6 +10,7 @@
   - [1. Selecionar servidor](#1-selecionar-servidor)
   - [2. Selecionar executável (QA ou PROD)](#2-selecionar-executável-qa-ou-prod)
   - [3. Confirmar versão](#3-confirmar-versão)
+  - [3.1 Verificação automática do Java 8](#31-verificação-automática-do-java-8)
   - [4. Configurar o DFe Converter](#4-configurar-o-dfe-converter)
   - [5. Download e instalação](#5-download-e-instalação)
   - [O que é criado após a instalação](#o-que-é-criado-após-a-instalação)
@@ -87,6 +88,57 @@ O setup exibe os dados da versão disponível antes de prosseguir:
 
 Prosseguir com a instalacao? [S/n]:
 ```
+
+### 3.1 Verificação automática do Java 8
+
+Após confirmar a instalação, o setup detecta automaticamente se Java 8 está disponível:
+
+**Cenário A — Java 8 já embarcado** (instalações já feitas com download automático):
+```
+2026-05-03T22:00:00Z Java embarcado encontrado: openjdk version "1.8.0_492"
+```
+
+**Cenário B — Java 8 do sistema detectado:**
+```
+2026-05-03T22:00:00Z Java do sistema detectado: openjdk version "1.8.0_392"
+
+  1) Usar Java do sistema (ja compativel — recomendado)
+  2) Baixar Zulu Java 8 dedicado para esta instalacao
+
+Escolha (1-2) [1]:
+```
+
+**Cenário C — Java não encontrado ou versão incompatível:**
+```
+2026-05-03T22:00:00Z Java nao encontrado. Baixando Zulu OpenJDK 8 da Azul...
+
+==========================================================
+         DOWNLOAD DO JAVA (Azul Zulu OpenJDK 8)
+==========================================================
+
+  1) JRE  - apenas ambiente de execucao (~110 MB, recomendado)
+  2) JDK  - kit completo com ferramentas de desenvolvimento (~200 MB)
+
+Escolha (1-2) [1]:
+
+2026-05-03T22:00:01Z Consultando Azul API (Java 8 jre para linux/x86_64)...
+
+  Pacote  : zulu8.94.0.17-ca-jre8.0.492-linux_x64.tar.gz
+  Versao  : Java 8 (jre/x86_64)
+  Tamanho : ~112 MB
+  Destino : /opt/DFE_CONVERTER_PROD/java
+
+Confirmar download? [S/n]:
+
+2026-05-03T22:00:02Z Baixando zulu8.94.0.17-ca-jre8.0.492-linux_x64.tar.gz...
+########################################### 100.0%
+2026-05-03T22:00:48Z Verificando integridade (SHA256)...
+2026-05-03T22:00:48Z SHA256 verificado.
+2026-05-03T22:00:48Z Extraindo para /opt/DFE_CONVERTER_PROD/java...
+2026-05-03T22:00:50Z Java instalado: openjdk version "1.8.0_492"
+```
+
+> **Nota:** quando o Java é baixado, ele fica em `<install_dir>/java/` e o serviço systemd aponta exclusivamente para esse binário via `JAVA_CMD` em `/etc/default/<service>`. Não é necessário instalar Java no sistema.
 
 ### 4. Configurar o DFe Converter
 
