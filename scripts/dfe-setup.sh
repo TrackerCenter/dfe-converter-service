@@ -414,28 +414,76 @@ EOF
 do_list_services() {
   echo ""
   echo "=========================================================="
-  echo "           SERVIÇOS dfe-* INSTALADOS"
+  echo "           SERVIÇOS DFe INSTALADOS"
   echo "=========================================================="
   echo ""
+
   if ! command -v systemctl >/dev/null 2>&1; then
-    echo "systemctl não disponível"
+    echo "  systemctl não disponível"
     return
   fi
 
-  # Lista todos os units dfe-* carregados (ativos ou não)
-  local found
-  found="$(systemctl list-units --type=service --all --no-legend --no-pager 2>/dev/null \
-    | grep -i 'dfe-' || true)"
+  # Coletar nomes de serviço: units conhecidos pelo systemd + unit files no disco
+  local from_units from_files all_services
+  from_units="$(systemctl list-units --type=service --all --no-legend --no-pager 2>/dev/null \
+    | awk '{print $1}' | grep -i '^dfe-' | sed 's/\.service$//' || true)"
+  from_files="$(find /etc/systemd/system -maxdepth 1 -name 'dfe-*.service' 2>/dev/null \
+    | xargs -I{} basename {} .service 2>/dev/null || true)"
+  all_services="$(printf '%s\n%s\n' "$from_units" "$from_files" \
+    | sort -u | grep -v '^$' || true)"
 
-  if [[ -z "$found" ]]; then
-    echo "  Nenhum serviço dfe-* encontrado."
-  else
-    printf "  %-40s %-12s %-10s %s\n" "SERVIÇO" "STATUS" "ATIVO" "DESCRIÇÃO"
-    echo "  -----------------------------------------------------------------------"
-    while IFS= read -r line; do
-      printf "  %s\n" "$line"
-    done <<< "$found"
+  if [[ -z "$all_services" ]]; then
+    echo "  Nenhum serviço DFe encontrado."
+    echo ""
+    return
   fi
+
+  printf "  %-32s  %-18s  %-8s  %s\n" "SERVIÇO" "ESTADO" "VERSÃO" "INSTALADO EM"
+  printf "  %s\n" "────────────────────────────────────────────────────────────────────────────────"
+
+  while IFS= read -r svc; do
+    local active sub load estado_txt versao install_dir
+
+    active="$(systemctl is-active  "${svc}.service" 2>/dev/null || echo 'unknown')"
+    sub="$(   systemctl show "${svc}.service" --property=SubState  --value 2>/dev/null || echo '')"
+    load="$(  systemctl show "${svc}.service" --property=LoadState --value 2>/dev/null || echo '')"
+
+    # Descobrir diretório de instalação via unit file (ExecStart contém o -jar)
+    install_dir=""
+    local unit_file="/etc/systemd/system/${svc}.service"
+    if [[ -f "$unit_file" ]]; then
+      local jar_path
+      jar_path="$(grep -o '\-jar [^ ]*' "$unit_file" 2>/dev/null | head -1 | cut -d' ' -f2 || true)"
+      [[ -n "$jar_path" ]] && install_dir="${jar_path%/*}"
+    fi
+
+    # Versão do state file gerado pelo instalador
+    versao="-"
+    if [[ -n "$install_dir" && -f "${install_dir}/.dfe-setup.env" ]]; then
+      local v
+      v="$(grep '^DFE_VERSAO=' "${install_dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || true)"
+      [[ -n "$v" ]] && versao="v${v}"
+    fi
+
+    # Estado legível com indicador visual
+    case "${active}/${sub}" in
+      active/running)  estado_txt="[OK] Rodando"    ;;
+      active/*)        estado_txt="[OK] ${sub}"     ;;
+      inactive/dead)   estado_txt="[--] Parado"     ;;
+      failed/*)        estado_txt="[!!] Falhou"     ;;
+      *)
+        if [[ "$load" == "not-found" ]]; then
+          estado_txt="[??] Nao instalado"
+        else
+          estado_txt="[??] ${active}"
+        fi
+        ;;
+    esac
+
+    printf "  %-32s  %-18s  %-8s  %s\n" \
+      "$svc" "$estado_txt" "$versao" "${install_dir:--}"
+  done <<< "$all_services"
+
   echo ""
 }
 
