@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.10.0
+# Versao: 1.12.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.11.0"
+SCRIPT_VERSION="1.12.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
@@ -29,7 +29,6 @@ DFE_AUTOUPDATE_TAG="# dfe-autoupdate-managed"
 TRACKER_API_URL="${TRACKER_API_URL:-}"
 DFE_AMBIENTE="${DFE_AMBIENTE:-}"
 AUTOUPDATE_INSTALL_DIR=""
-DFE_REPORT_TOKEN=""
 
 log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 
@@ -973,8 +972,8 @@ _show_autoupdate_status() {
   echo ""
 }
 
-# Gera o script wrapper /usr/local/bin/dfe-autoupdate com URL, ambiente e
-# relatório automático incorporados. Usa AUTOUPDATE_INSTALL_DIR e DFE_REPORT_TOKEN.
+# Gera o script wrapper /usr/local/bin/dfe-autoupdate com URL e ambiente incorporados.
+# Usa AUTOUPDATE_INSTALL_DIR.
 _write_autoupdate_script() {
   local gen_date
   gen_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -1010,7 +1009,6 @@ DFE_SERVICE="\$(_read_state DFE_SERVICE_NAME)"
 DFE_JAR_NAME="\$(_read_state DFE_JAR_NAME)"
 DFE_CONFIG_NAME="\$(_read_state DFE_CONFIG_NAME)"
 OLD_VER="\$(_read_state DFE_VERSAO)"
-REPORT_TOKEN="\$(_read_state DFE_REPORT_TOKEN)"
 CONFIG_FILE="\${INSTALL_DIR}/\${DFE_CONFIG_NAME:-config.properties}"
 JAR_PATH="\${INSTALL_DIR}/\${DFE_JAR_NAME}"
 
@@ -1087,15 +1085,15 @@ rm -f "\${BACKUP_JAR}" 2>/dev/null || true
 log_au "Resultado: status=\${STATUS} versao_anterior=\${OLD_VER} versao_nova=\${NEW_VER}"
 
 # --- Enviar relatório ao Tracker ---
-if [[ -n "\${REPORT_TOKEN}" && -n "\${TENANT}" && -n "\${TRACKER_API_URL}" ]]; then
+if [[ -n "\${TENANT}" && -n "\${TRACKER_API_URL}" ]]; then
   DESCRICAO_SAFE="\$(printf '%s' "\${DESCRICAO}" | tr -d '\r\n' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')"
-  PAYLOAD="{\"tenant\":\"\${TENANT}\",\"token\":\"\${REPORT_TOKEN}\",\"serviceName\":\"\${DFE_SERVICE}\",\"servidor\":\"\${SERVIDOR}\",\"ambiente\":\"\${DFE_AMBIENTE}\",\"versaoAnterior\":\"\${OLD_VER}\",\"versaoNova\":\"\${NEW_VER}\",\"status\":\"\${STATUS}\",\"descricao\":\"\${DESCRICAO_SAFE}\"}"
+  PAYLOAD="{\"tenant\":\"\${TENANT}\",\"serviceName\":\"\${DFE_SERVICE}\",\"servidor\":\"\${SERVIDOR}\",\"ambiente\":\"\${DFE_AMBIENTE}\",\"versaoAnterior\":\"\${OLD_VER}\",\"versaoNova\":\"\${NEW_VER}\",\"status\":\"\${STATUS}\",\"descricao\":\"\${DESCRICAO_SAFE}\"}"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL -X POST -H "Content-Type: application/json" -d "\${PAYLOAD}" "\${REPORT_API_URL}" >/dev/null 2>&1 \
       || log_au "AVISO: falha ao enviar relatorio de atualizacao"
   fi
 else
-  log_au "AVISO: token ou tenant nao configurado — relatorio de atualizacao nao enviado"
+  log_au "AVISO: tenant nao configurado — relatorio de atualizacao nao enviado"
 fi
 
 log_au "Concluido (status=\${STATUS}, rc=\${UPDATE_RC})"
@@ -1173,42 +1171,13 @@ do_autoupdate() {
     DFE_AMBIENTE="$(_select_dfe_ambiente)"
   fi
 
-  # Detectar instalação para registrar token de relatório
+  # Detectar instalação para o INSTALL_DIR do auto-update
   local install_dir=""
   if install_dir="$(_select_install_dir 2>/dev/null)"; then
     AUTOUPDATE_INSTALL_DIR="$install_dir"
-
-    # Registrar (ou renovar) token de relatório para o tenant desta instalação
-    local config_name config_file tenant
-    config_name="$(grep '^DFE_CONFIG_NAME=' "${install_dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || echo 'config.properties')"
-    config_file="${install_dir}/${config_name}"
-    tenant="$(grep '^sync.tenant=' "${config_file}" 2>/dev/null | cut -d'=' -f2- || echo "")"
-    if [[ -n "$tenant" ]]; then
-      log "Registrando token de relatorio para tenant=${tenant}..."
-      local token_response token=""
-      token_response="$(curl -fsSL -X POST "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/setup/register-token?tenant=${tenant}" 2>/dev/null || echo "")"
-      token="$(echo "$token_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")"
-      if [[ -n "$token" ]]; then
-        # Salvar token no state file
-        if grep -q '^DFE_REPORT_TOKEN=' "${install_dir}/.dfe-setup.env" 2>/dev/null; then
-          sed -i "s|^DFE_REPORT_TOKEN=.*|DFE_REPORT_TOKEN=${token}|" "${install_dir}/.dfe-setup.env"
-        else
-          printf 'DFE_REPORT_TOKEN=%s\n' "$token" >> "${install_dir}/.dfe-setup.env"
-        fi
-        DFE_REPORT_TOKEN="$token"
-        log "Token de relatorio configurado."
-      else
-        log "AVISO: Nao foi possivel registrar token de relatorio. Relatorios de auto-update nao serao enviados."
-        DFE_REPORT_TOKEN=""
-      fi
-    else
-      log "AVISO: tenant nao encontrado em ${config_file}. Relatorios de auto-update nao serao enviados."
-      DFE_REPORT_TOKEN=""
-    fi
   else
-    log "AVISO: Nenhuma instalacao valida encontrada. Configurando auto-update sem relatorio."
+    log "AVISO: Nenhuma instalacao valida encontrada. Configurando auto-update sem diretorio."
     AUTOUPDATE_INSTALL_DIR=""
-    DFE_REPORT_TOKEN=""
   fi
 
   _show_autoupdate_status
