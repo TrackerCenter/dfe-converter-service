@@ -440,6 +440,7 @@ do_list_services() {
 }
 
 do_install() {
+  local force_jar="${1:-}"   # "force" = pular verificacao de versao identica
   ensure_api_url || return 1
 
   # 0. Selecionar qual executável instalar (QA ou PROD) — independente do servidor
@@ -474,18 +475,37 @@ do_install() {
   printf "  Tamanho  : %s MB\n" "$(( ${remote_tamanho:-0} / 1048576 ))"
   printf "  Data     : %s\n"   "${remote_data:-?}"
   echo ""
-  local yn
-  read -rp "Prosseguir com a instalacao? [S/n]: " yn
-  case "${yn,,}" in
-    ''|s|y|yes|sim) ;;
-    *) log "Instalacao cancelada."; return 0;;
-  esac
 
   # 2.1 Determinar diretório de instalação (mesmo default do dfe-install.sh)
   local install_dir_target
   case "${install_ambiente^^}" in
     PROD) install_dir_target="/opt/DFE_CONVERTER_PROD" ;;
     *)    install_dir_target="/opt/DFE_CONVERTER_QA" ;;
+  esac
+
+  # 2.2 Verificar se versão já instalada corresponde à disponível — evitar download desnecessário
+  if [[ "$force_jar" != "force" && -n "$remote_versao" ]]; then
+    local installed_versao=""
+    local state_file_check="${install_dir_target}/.dfe-setup.env"
+    if [[ -f "$state_file_check" ]]; then
+      installed_versao="$(grep '^DFE_VERSAO=' "$state_file_check" 2>/dev/null | cut -d'=' -f2- || true)"
+    fi
+    if [[ -n "$installed_versao" && "$installed_versao" == "$remote_versao" ]]; then
+      echo "  Versao instalada ($installed_versao) ja e a mais recente."
+      local yn_force
+      read -rp "  Forcar reinstalacao do JAR mesmo assim? [s/N]: " yn_force
+      case "${yn_force,,}" in
+        s|y|yes|sim) ;;
+        *) log "Operacao cancelada."; return 0;;
+      esac
+    fi
+  fi
+
+  local yn
+  read -rp "Prosseguir com a instalacao? [S/n]: " yn
+  case "${yn,,}" in
+    ''|s|y|yes|sim) ;;
+    *) log "Instalacao cancelada."; return 0;;
   esac
 
   # 2.2 Garantir Java 8 disponível — pode baixar Zulu se necessário
@@ -597,15 +617,14 @@ CONFIG_EOF
   rm -f "$tmp_jar" "$tmp_config"
 
   # 5. Configurar Java embarcado pós-instalação (independente da versão do dfe-install.sh)
-  if [[ $rc -eq 0 && -n "$java_home" && -x "${java_home}/bin/java" ]]; then
-    # Ler nome do serviço do state file gerado pelo instalador
-    local state_file="${install_dir_target}/.dfe-setup.env"
-    local service_name
-    if [[ -f "$state_file" ]]; then
-      service_name="$(grep '^DFE_SERVICE_NAME=' "$state_file" 2>/dev/null | cut -d'=' -f2-)"
-    fi
-    service_name="${service_name:-$([ "$install_ambiente" = "PROD" ] && echo dfe-converter-prod || echo dfe-converter-qa)}"
+  local service_name=""
+  local state_file="${install_dir_target}/.dfe-setup.env"
+  if [[ -f "$state_file" ]]; then
+    service_name="$(grep '^DFE_SERVICE_NAME=' "$state_file" 2>/dev/null | cut -d'=' -f2- || true)"
+  fi
+  service_name="${service_name:-$([ "$install_ambiente" = "PROD" ] && echo dfe-converter-prod || echo dfe-converter-qa)}"
 
+  if [[ $rc -eq 0 && -n "$java_home" && -x "${java_home}/bin/java" ]]; then
     # Ajustar permissões do java embarcado para o usuário do serviço (dfeconv)
     chown -R dfeconv:dfeconv "$java_home" 2>/dev/null || true
     chmod -R a+rX "$java_home" 2>/dev/null || true
@@ -621,6 +640,16 @@ CONFIG_EOF
     else
       log "AVISO: env file nao encontrado: ${env_file}"
     fi
+  fi
+
+  if [[ $rc -eq 0 ]]; then
+    echo ""
+    echo "=========================================================="
+    echo "              STATUS DO SERVICO APOS INSTALACAO"
+    echo "=========================================================="
+    sleep 2
+    systemctl status "${service_name}.service" --no-pager -l 2>/dev/null || true
+    echo ""
   fi
 
   return $rc
@@ -1234,7 +1263,7 @@ while true; do
       do_uninstall || true
       echo ""
       log "Passo 2/2: Instalando..."
-      do_install
+      do_install force
       ;;
     4)
       do_status
