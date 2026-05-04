@@ -63,12 +63,23 @@ Ao executar o setup, o seguinte menu é exibido:
 ### Linux
 - `bash` 4.0+, `curl` ou `wget`, `sha256sum`, `systemctl`
 - Execução como **root** (ou via `sudo`)
-- Java instalado e acessível no `PATH` (verifique com `java -version`)
+- **Java 8:** detectado automaticamente — se não estiver presente ou for versão incompatível, o setup oferece download automático do [Zulu OpenJDK 8](https://www.azul.com/downloads/?package=jdk#zulu) (sem necessidade de instalação manual)
 
 ### Windows
 - PowerShell 5.1+ (recomendado PowerShell 7+)
 - Execução como **Administrador**
 - `nssm` é baixado automaticamente se ausente
+
+---
+
+## Status de implantação
+
+| Branch | Versão | Descrição | Status |
+|--------|--------|-----------|--------|
+| `develop` (v1.10.0) | `dfe-setup.sh` | Auto-download Zulu Java 8 quando Java não encontrado | ✅ Mergeado |
+| `fix/dfe-setup-java-postcfg` | `dfe-setup.sh` | Correção: configurar `JAVA_CMD` pós-instalação sem passar `--java-home` ao instalador remoto | ⏳ Aguardando PR |
+
+> **Nota sobre `fix/dfe-setup-java-postcfg`:** a v1.10.0 passava `--java-home` diretamente ao `dfe-install.sh` baixado do servidor, mas o instalador remoto pode ser uma versão anterior sem suporte ao parâmetro. O fix aplica a configuração de Java diretamente no `/etc/default/<service>` após a instalação, mantendo compatibilidade com qualquer versão do instalador.
 
 ---
 
