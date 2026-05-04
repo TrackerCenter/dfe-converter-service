@@ -5,7 +5,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.10.0"
+SCRIPT_VERSION="1.11.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
@@ -28,6 +28,8 @@ DFE_AUTOUPDATE_TAG="# dfe-autoupdate-managed"
 
 TRACKER_API_URL="${TRACKER_API_URL:-}"
 DFE_AMBIENTE="${DFE_AMBIENTE:-}"
+AUTOUPDATE_INSTALL_DIR=""
+DFE_REPORT_TOKEN=""
 
 log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 
@@ -971,7 +973,8 @@ _show_autoupdate_status() {
   echo ""
 }
 
-# Gera o script wrapper /usr/local/bin/dfe-autoupdate com URL e ambiente fixos.
+# Gera o script wrapper /usr/local/bin/dfe-autoupdate com URL, ambiente e
+# relatório automático incorporados. Usa AUTOUPDATE_INSTALL_DIR e DFE_REPORT_TOKEN.
 _write_autoupdate_script() {
   local gen_date
   gen_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -980,30 +983,123 @@ _write_autoupdate_script() {
 # Gerado automaticamente pelo dfe-setup.sh em ${gen_date}
 # Ambiente: ${DFE_AMBIENTE} | URL: ${TRACKER_API_URL}
 # Para reconfigurar execute: sudo dfe-setup (opcao 8)
+set -o nounset
 TRACKER_API_URL="${TRACKER_API_URL}"
 DFE_AMBIENTE="${DFE_AMBIENTE}"
 UPDATE_URL="${RAW_BASE}/dfe-update.sh"
+INSTALL_DIR="${AUTOUPDATE_INSTALL_DIR}"
+STATE_FILE="\${INSTALL_DIR}/.dfe-setup.env"
+REPORT_API_URL="\${TRACKER_API_URL}/api/v1/dfe-converter/versoes/setup/update-report"
 
 log_au() { printf '%s dfe-autoupdate %s\n' "\$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "\$*"; }
 
 log_au "Iniciando verificacao automatica (ambiente=\${DFE_AMBIENTE})..."
 
-tmpscript="\$(mktemp /tmp/dfe-update.XXXXXX.sh)"
-if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "\${UPDATE_URL}" -o "\${tmpscript}"
-elif command -v wget >/dev/null 2>&1; then
-  wget -qO "\${tmpscript}" "\${UPDATE_URL}"
-else
-  log_au "ERRO: curl ou wget nao encontrado"
+# --- Ler estado da instalação ---
+_read_state() { grep "^\${1}=" "\${STATE_FILE}" 2>/dev/null | head -1 | cut -d'=' -f2-; }
+_write_state() {
+  local k="\$1" v="\$2"
+  if grep -q "^\${k}=" "\${STATE_FILE}" 2>/dev/null; then
+    sed -i "s|^\${k}=.*|\${k}=\${v}|" "\${STATE_FILE}"
+  else
+    printf '%s=%s\n' "\$k" "\$v" >> "\${STATE_FILE}"
+  fi
+}
+
+DFE_SERVICE="\$(_read_state DFE_SERVICE_NAME)"
+DFE_JAR_NAME="\$(_read_state DFE_JAR_NAME)"
+DFE_CONFIG_NAME="\$(_read_state DFE_CONFIG_NAME)"
+OLD_VER="\$(_read_state DFE_VERSAO)"
+REPORT_TOKEN="\$(_read_state DFE_REPORT_TOKEN)"
+CONFIG_FILE="\${INSTALL_DIR}/\${DFE_CONFIG_NAME:-config.properties}"
+JAR_PATH="\${INSTALL_DIR}/\${DFE_JAR_NAME}"
+
+TENANT="\$(grep '^sync.tenant=' "\${CONFIG_FILE}" 2>/dev/null | cut -d'=' -f2- || true)"
+SERVIDOR="\$(hostname -f 2>/dev/null || hostname)"
+
+if [[ -z "\${DFE_SERVICE}" || -z "\${JAR_PATH}" ]]; then
+  log_au "ERRO: estado da instalacao incompleto — abortando."
   exit 1
 fi
 
-chmod +x "\${tmpscript}"
-bash "\${tmpscript}" --api-url "\${TRACKER_API_URL}" --ambiente "\${DFE_AMBIENTE}" --yes
-rc=\$?
+# --- Backup do JAR atual ---
+BACKUP_JAR="\${JAR_PATH}.bak"
+[[ -f "\${JAR_PATH}" ]] && cp "\${JAR_PATH}" "\${BACKUP_JAR}"
+
+# --- Executar atualização ---
+tmpscript="\$(mktemp /tmp/dfe-update.XXXXXX.sh)"
+UPDATE_RC=0
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "\${UPDATE_URL}" -o "\${tmpscript}" || UPDATE_RC=\$?
+elif command -v wget >/dev/null 2>&1; then
+  wget -qO "\${tmpscript}" "\${UPDATE_URL}" || UPDATE_RC=\$?
+else
+  log_au "ERRO: curl ou wget nao encontrado"
+  UPDATE_RC=1
+fi
+
+if [[ \$UPDATE_RC -eq 0 ]]; then
+  chmod +x "\${tmpscript}"
+  set +o nounset
+  bash "\${tmpscript}" --api-url "\${TRACKER_API_URL}" --ambiente "\${DFE_AMBIENTE}" --install-dir "\${INSTALL_DIR}" --yes
+  UPDATE_RC=\$?
+  set -o nounset
+fi
 rm -f "\${tmpscript}"
-log_au "Concluido (rc=\${rc})"
-exit \${rc}
+
+NEW_VER="\$(_read_state DFE_VERSAO)"
+STATUS="SUCESSO"
+DESCRICAO=""
+
+# --- Verificar resultado ---
+if [[ \$UPDATE_RC -ne 0 ]]; then
+  STATUS="ERRO"
+  DESCRICAO="dfe-update.sh falhou com rc=\${UPDATE_RC}"
+  log_au "\${DESCRICAO}"
+  if [[ -f "\${BACKUP_JAR}" ]]; then
+    log_au "Restaurando backup e reiniciando servico..."
+    cp "\${BACKUP_JAR}" "\${JAR_PATH}"
+    _write_state DFE_VERSAO "\${OLD_VER}"
+    if systemctl restart "\${DFE_SERVICE}.service" 2>/dev/null; then
+      STATUS="ROLLBACK"
+      DESCRICAO="Rollback para v\${OLD_VER} realizado apos falha no download/update (rc=\${UPDATE_RC})"
+    else
+      DESCRICAO="Rollback tentado mas falha ao reiniciar o servico"
+    fi
+  fi
+else
+  # Aguardar estabilização e checar saúde do serviço
+  sleep 8
+  if ! systemctl is-active --quiet "\${DFE_SERVICE}.service" 2>/dev/null; then
+    log_au "Servico nao iniciou apos atualizacao. Realizando rollback..."
+    STATUS="ROLLBACK"
+    DESCRICAO="Servico nao iniciou apos atualizacao para v\${NEW_VER}. Rollback para v\${OLD_VER} realizado."
+    if [[ -f "\${BACKUP_JAR}" ]]; then
+      cp "\${BACKUP_JAR}" "\${JAR_PATH}"
+      _write_state DFE_VERSAO "\${OLD_VER}"
+    fi
+    systemctl restart "\${DFE_SERVICE}.service" 2>/dev/null || true
+    NEW_VER="\${OLD_VER}"
+  fi
+fi
+rm -f "\${BACKUP_JAR}" 2>/dev/null || true
+
+log_au "Resultado: status=\${STATUS} versao_anterior=\${OLD_VER} versao_nova=\${NEW_VER}"
+
+# --- Enviar relatório ao Tracker ---
+if [[ -n "\${REPORT_TOKEN}" && -n "\${TENANT}" && -n "\${TRACKER_API_URL}" ]]; then
+  DESCRICAO_SAFE="\$(printf '%s' "\${DESCRICAO}" | tr -d '\r\n' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')"
+  PAYLOAD="{\"tenant\":\"\${TENANT}\",\"token\":\"\${REPORT_TOKEN}\",\"serviceName\":\"\${DFE_SERVICE}\",\"servidor\":\"\${SERVIDOR}\",\"ambiente\":\"\${DFE_AMBIENTE}\",\"versaoAnterior\":\"\${OLD_VER}\",\"versaoNova\":\"\${NEW_VER}\",\"status\":\"\${STATUS}\",\"descricao\":\"\${DESCRICAO_SAFE}\"}"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -X POST -H "Content-Type: application/json" -d "\${PAYLOAD}" "\${REPORT_API_URL}" >/dev/null 2>&1 \
+      || log_au "AVISO: falha ao enviar relatorio de atualizacao"
+  fi
+else
+  log_au "AVISO: token ou tenant nao configurado — relatorio de atualizacao nao enviado"
+fi
+
+log_au "Concluido (status=\${STATUS}, rc=\${UPDATE_RC})"
+exit \${UPDATE_RC}
 AUTOUPDATE_EOF
   chmod +x "$DFE_AUTOUPDATE_SCRIPT"
   log "Script gerado: $DFE_AUTOUPDATE_SCRIPT"
@@ -1075,6 +1171,44 @@ do_autoupdate() {
   # DFE_AMBIENTE precisa estar definido para o script de auto-update
   if [[ -z "${DFE_AMBIENTE:-}" ]]; then
     DFE_AMBIENTE="$(_select_dfe_ambiente)"
+  fi
+
+  # Detectar instalação para registrar token de relatório
+  local install_dir=""
+  if install_dir="$(_select_install_dir 2>/dev/null)"; then
+    AUTOUPDATE_INSTALL_DIR="$install_dir"
+
+    # Registrar (ou renovar) token de relatório para o tenant desta instalação
+    local config_name config_file tenant
+    config_name="$(grep '^DFE_CONFIG_NAME=' "${install_dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || echo 'config.properties')"
+    config_file="${install_dir}/${config_name}"
+    tenant="$(grep '^sync.tenant=' "${config_file}" 2>/dev/null | cut -d'=' -f2- || echo "")"
+    if [[ -n "$tenant" ]]; then
+      log "Registrando token de relatorio para tenant=${tenant}..."
+      local token_response token=""
+      token_response="$(curl -fsSL -X POST "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/setup/register-token?tenant=${tenant}" 2>/dev/null || echo "")"
+      token="$(echo "$token_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")"
+      if [[ -n "$token" ]]; then
+        # Salvar token no state file
+        if grep -q '^DFE_REPORT_TOKEN=' "${install_dir}/.dfe-setup.env" 2>/dev/null; then
+          sed -i "s|^DFE_REPORT_TOKEN=.*|DFE_REPORT_TOKEN=${token}|" "${install_dir}/.dfe-setup.env"
+        else
+          printf 'DFE_REPORT_TOKEN=%s\n' "$token" >> "${install_dir}/.dfe-setup.env"
+        fi
+        DFE_REPORT_TOKEN="$token"
+        log "Token de relatorio configurado."
+      else
+        log "AVISO: Nao foi possivel registrar token de relatorio. Relatorios de auto-update nao serao enviados."
+        DFE_REPORT_TOKEN=""
+      fi
+    else
+      log "AVISO: tenant nao encontrado em ${config_file}. Relatorios de auto-update nao serao enviados."
+      DFE_REPORT_TOKEN=""
+    fi
+  else
+    log "AVISO: Nenhuma instalacao valida encontrada. Configurando auto-update sem relatorio."
+    AUTOUPDATE_INSTALL_DIR=""
+    DFE_REPORT_TOKEN=""
   fi
 
   _show_autoupdate_status
