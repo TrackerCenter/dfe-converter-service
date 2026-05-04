@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.8.0
+# Versao: 1.9.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.8.0"
+SCRIPT_VERSION="1.9.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ ├® substitu├¡do
+# RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
 RAW_BASE="${DFESCRIPTS_RAW_BASE:-__TRACKER_BASE_URL__/api/v1/dfe-converter/versoes/setup/scripts/linux}"
 
-# Diret├│rio tempor├írio para scripts baixados da rede.
-# Usar nomes previs├¡veis (n├úo mktemp por arquivo) garante que _state.sh
+# Diretório temporário para scripts baixados da rede.
+# Usar nomes previsíveis (não mktemp por arquivo) garante que _state.sh
 # fique no mesmo SCRIPT_DIR que os scripts que fazem source dele.
 TMP_SCRIPTS="$(mktemp -d /tmp/dfe-scripts.XXXXXX)"
 trap 'rm -rf "$TMP_SCRIPTS"' EXIT
@@ -53,8 +53,8 @@ ensure_root() {
   fi
 }
 
-# Baixa um ├║nico arquivo para o destino informado.
-# Toda sa├¡da vai para stderr para n├úo contaminar capturas via $().
+# Baixa um único arquivo para o destino informado.
+# Toda saída vai para stderr para não contaminar capturas via $().
 _http_get() {
   local url="$1" dest="$2"
   if command -v curl >/dev/null 2>&1; then
@@ -67,7 +67,7 @@ _http_get() {
   fi
 }
 
-# Retorna o conte├║do de uma URL no stdout.
+# Retorna o conteúdo de uma URL no stdout.
 _http_get_text() {
   local url="$1"
   if command -v curl >/dev/null 2>&1; then
@@ -80,7 +80,7 @@ _http_get_text() {
   fi
 }
 
-# Baixa um arquivo grande com barra de progresso vis├¡vel no terminal.
+# Baixa um arquivo grande com barra de progresso visível no terminal.
 _http_get_large() {
   local url="$1" dest="$2"
   if command -v curl >/dev/null 2>&1; then
@@ -93,10 +93,10 @@ _http_get_large() {
   fi
 }
 
-# Solicita ao usu├írio qual servidor do Tracker usar para buscar scripts e execut├íveis.
-# Define TRACKER_API_URL globalmente para toda a sess├úo.
-# N├úo faz nada se TRACKER_API_URL j├í estiver definida.
-# NOTA: a URL do servidor ├® independente do ambiente do execut├ível (QA/PROD).
+# Solicita ao usuário qual servidor do Tracker usar para buscar scripts e executáveis.
+# Define TRACKER_API_URL globalmente para toda a sessão.
+# Não faz nada se TRACKER_API_URL já estiver definida.
+# NOTA: a URL do servidor é independente do ambiente do executável (QA/PROD).
 ensure_api_url() {
   if [[ -n "$TRACKER_API_URL" ]]; then
     return 0
@@ -135,8 +135,8 @@ ensure_api_url() {
   log "Servidor: $TRACKER_API_URL"
 }
 
-# Solicita ao usu├írio qual vers├úo do execut├ível DFe Converter instalar/atualizar.
-# Imprime QA ou PROD no stdout; mensagens de prompt v├úo para stderr.
+# Solicita ao usuário qual versão do executável DFe Converter instalar/atualizar.
+# Imprime QA ou PROD no stdout; mensagens de prompt vão para stderr.
 # Independente da URL do servidor selecionada em ensure_api_url().
 _select_dfe_ambiente() {
   echo "" >&2
@@ -158,9 +158,9 @@ _select_dfe_ambiente() {
   done
 }
 
-# Baixa um script para $TMP_SCRIPTS/<nome> e garante que _state.sh tamb├®m
-# esteja dispon├¡vel no mesmo diret├│rio (depend├¬ncia de todos os scripts).
-# Apenas o caminho final ├® impresso no stdout; logs v├úo para stderr.
+# Baixa um script para $TMP_SCRIPTS/<nome> e garante que _state.sh também
+# esteja disponível no mesmo diretório (dependência de todos os scripts).
+# Apenas o caminho final é impresso no stdout; logs vão para stderr.
 download_script() {
   local name="$1"
   local dest="${TMP_SCRIPTS}/${name}"
@@ -184,8 +184,8 @@ download_script() {
 }
 
 # Retorna o caminho do script: local (SCRIPT_DIR) tem prioridade,
-# depois cache TMP_SCRIPTS, por ├║ltimo baixa da rede.
-# Apenas o caminho ├® impresso no stdout; logs v├úo para stderr.
+# depois cache TMP_SCRIPTS, por último baixa da rede.
+# Apenas o caminho é impresso no stdout; logs vão para stderr.
 get_script() {
   local name="$1"
   local local_path="${SCRIPT_DIR}/${name}"
@@ -228,8 +228,8 @@ show_menu() {
   2) Remover service
   3) Reinstalar
   4) Status do service
-  5) Listar servi├ºos dfe instalados
-  6) Verificar atualiza├º├úo
+  5) Listar serviços dfe instalados
+  6) Verificar atualização
   7) Baixar e atualizar JAR
   8) Configurar auto-update
   9) Sair
@@ -240,23 +240,23 @@ EOF
 do_list_services() {
   echo ""
   echo "=========================================================="
-  echo "           SERVI├çOS dfe-* INSTALADOS"
+  echo "           SERVIÇOS dfe-* INSTALADOS"
   echo "=========================================================="
   echo ""
   if ! command -v systemctl >/dev/null 2>&1; then
-    echo "systemctl n├úo dispon├¡vel"
+    echo "systemctl não disponível"
     return
   fi
 
-  # Lista todos os units dfe-* carregados (ativos ou n├úo)
+  # Lista todos os units dfe-* carregados (ativos ou não)
   local found
   found="$(systemctl list-units --type=service --all --no-legend --no-pager 2>/dev/null \
     | grep -i 'dfe-' || true)"
 
   if [[ -z "$found" ]]; then
-    echo "  Nenhum servi├ºo dfe-* encontrado."
+    echo "  Nenhum serviço dfe-* encontrado."
   else
-    printf "  %-40s %-12s %-10s %s\n" "SERVI├çO" "STATUS" "ATIVO" "DESCRI├ç├âO"
+    printf "  %-40s %-12s %-10s %s\n" "SERVIÇO" "STATUS" "ATIVO" "DESCRIÇÃO"
     echo "  -----------------------------------------------------------------------"
     while IFS= read -r line; do
       printf "  %s\n" "$line"
@@ -268,11 +268,11 @@ do_list_services() {
 do_install() {
   ensure_api_url || return 1
 
-  # 0. Selecionar qual execut├ível instalar (QA ou PROD) ÔÇö independente do servidor
+  # 0. Selecionar qual executável instalar (QA ou PROD) — independente do servidor
   local install_ambiente
   install_ambiente="$(_select_dfe_ambiente)"
 
-  # 1. Buscar metadados e mostrar vers├úo dispon├¡vel
+  # 1. Buscar metadados e mostrar versão disponível
   log "Consultando versao disponivel ($install_ambiente)..."
   local info_text
   info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${install_ambiente}&tipo=JAR" 2>/dev/null || echo "")"
@@ -427,18 +427,12 @@ do_uninstall() {
 }
 
 do_status() {
-  echo ""
-  echo "=========================================================="
-  echo "              STATUS DO SERVICO"
-  echo "=========================================================="
-  echo ""
-
   if ! command -v systemctl >/dev/null 2>&1; then
     echo "  systemctl nao disponivel"
     return 0
   fi
 
-  # Coletar nomes de servi├ºo a partir dos state files das instala├º├Áes conhecidas
+  # Coletar serviços a partir dos state files das instalações conhecidas
   local -a services=()
   while IFS= read -r dir; do
     local svc
@@ -458,23 +452,28 @@ do_status() {
   fi
 
   if [[ ${#services[@]} -eq 0 ]]; then
+    echo ""
     echo "  Nenhum servico dfe-* encontrado."
     echo "  Use a opcao 1 (Instalar service) para instalar o DFe Converter."
     echo ""
     return 0
   fi
 
+  # Selecionar serviço (pula seleção se apenas um)
   local service_name
   if [[ ${#services[@]} -eq 1 ]]; then
     service_name="${services[0]}"
-    echo "  Servico: $service_name"
-    echo ""
   else
-    local i=1
-    echo "  Servicos dfe-* encontrados:"
     echo ""
+    echo "=========================================================="
+    echo "              SELECIONAR SERVICO"
+    echo "=========================================================="
+    echo ""
+    local i=1
     for svc in "${services[@]}"; do
-      printf "  %d) %s\n" "$i" "$svc"
+      local state
+      state="$(systemctl is-active "${svc}.service" 2>/dev/null || true)"
+      printf "  %d) %-35s [%s]\n" "$i" "$svc" "${state:-desconhecido}"
       (( i++ ))
     done
     echo ""
@@ -487,28 +486,97 @@ do_status() {
     service_name="${services[$((choice - 1))]}"
   fi
 
-  echo "=========================================================="
-  echo ""
-  systemctl status "${service_name}.service" --no-pager 2>&1 || true
-  echo ""
+  # Submenu de ações — permanece até o usuário escolher Voltar
+  local _dummy
+  while true; do
+    local state
+    state="$(systemctl is-active "${service_name}.service" 2>/dev/null || true)"
+
+    echo ""
+    echo "=========================================================="
+    printf "   SERVICO: %-30s [%s]\n" "$service_name" "${state:-desconhecido}"
+    echo "=========================================================="
+    echo ""
+    echo "  1) Ver detalhes"
+    echo "  2) Reiniciar"
+    if [[ "$state" == "active" ]]; then
+      echo "  3) Parar"
+    else
+      echo "  3) Iniciar"
+    fi
+    echo "  4) Voltar"
+    echo ""
+
+    local action
+    read -rp "Escolha (1-4): " action
+    case "$action" in
+      1)
+        echo ""
+        echo "=========================================================="
+        echo "              STATUS DO SERVICO"
+        echo "=========================================================="
+        echo ""
+        systemctl status "${service_name}.service" --no-pager -l 2>&1 || true
+        echo ""
+        read -rp "Pressione ENTER para continuar..." _dummy
+        ;;
+      2)
+        echo ""
+        log "Reiniciando ${service_name}..."
+        if systemctl restart "${service_name}.service" 2>&1; then
+          log "Servico reiniciado com sucesso."
+        else
+          log "AVISO: falha ao reiniciar. Use 'Ver detalhes' para diagnosticar."
+        fi
+        echo ""
+        read -rp "Pressione ENTER para continuar..." _dummy
+        ;;
+      3)
+        echo ""
+        if [[ "$state" == "active" ]]; then
+          log "Parando ${service_name}..."
+          if systemctl stop "${service_name}.service" 2>&1; then
+            log "Servico parado."
+          else
+            log "AVISO: falha ao parar o servico."
+          fi
+        else
+          log "Iniciando ${service_name}..."
+          if systemctl start "${service_name}.service" 2>&1; then
+            log "Servico iniciado com sucesso."
+          else
+            log "AVISO: falha ao iniciar. Use 'Ver detalhes' para diagnosticar."
+          fi
+        fi
+        echo ""
+        read -rp "Pressione ENTER para continuar..." _dummy
+        ;;
+      4)
+        return 0
+        ;;
+      *)
+        echo "  Opcao invalida. Escolha 1, 2, 3 ou 4."
+        ;;
+    esac
+  done
 }
 
 # ---------------------------------------------------------------------------
-# Detec├º├úo de instala├º├Áes existentes
+# Detecção de instalações existentes
 # ---------------------------------------------------------------------------
 
-# Retorna (um por linha) os diret├│rios onde h├í uma instala├º├úo do DFe Converter.
-# Verifica locais padr├úo + qualquer dir sob /opt com .dfe-setup.env.
+# Retorna (um por linha) os diretórios onde há uma instalação do DFe Converter.
+# Verifica locais padrão + qualquer dir sob /opt com .dfe-setup.env.
 _find_dfe_installations() {
   local -A seen=()
-  # Locais padr├úo conhecidos
+  # Locais padrão conhecidos
   for dir in /opt/DFE_CONVERTER_QA /opt/DFE_CONVERTER_PROD /opt/dfe-converter; do
     if [[ -f "${dir}/.dfe-setup.env" ]] && [[ -z "${seen[$dir]+x}" ]]; then
       seen[$dir]=1
       echo "$dir"
     fi
   done
-  # Varredura geral em /opt (at├® 3 n├¡veis)
+  # Varredura geral em /opt (até 3 níveis)
   while IFS= read -r envfile; do
     local d
     d="$(dirname "$envfile")"
@@ -519,8 +587,8 @@ _find_dfe_installations() {
   done < <(find /opt -maxdepth 3 -name ".dfe-setup.env" 2>/dev/null || true)
 }
 
-# Solicita ao usu├írio que selecione (ou informe) o diret├│rio de instala├º├úo.
-# Imprime o diret├│rio escolhido no stdout; retorna 1 se o usu├írio cancelar.
+# Solicita ao usuário que selecione (ou informe) o diretório de instalação.
+# Imprime o diretório escolhido no stdout; retorna 1 se o usuário cancelar.
 _select_install_dir() {
   local installations=()
   while IFS= read -r dir; do
@@ -552,7 +620,7 @@ _select_install_dir() {
     return 0
   fi
 
-  # M├║ltiplas instala├º├Áes ÔÇö deixa o usu├írio escolher
+  # Múltiplas instalações — deixa o usuário escolher
   echo "" >&2
   echo "  Instalacoes encontradas:" >&2
   local i=1
@@ -578,7 +646,7 @@ _select_install_dir() {
 do_check_update() {
   ensure_api_url || return 1
 
-  # Listar todos os arquivos dispon├¡veis na ├║ltima vers├úo (QA e PROD)
+  # Listar todos os arquivos disponíveis na última versão (QA e PROD)
   echo ""
   echo "=========================================================="
   echo "       ARQUIVOS DISPONIVEIS NA ULTIMA VERSAO"
@@ -606,7 +674,7 @@ do_check_update() {
   done
   echo ""
 
-  # Detectar instala├º├Áes existentes para verificar se h├í atualiza├º├úo pendente
+  # Detectar instalações existentes para verificar se há atualização pendente
   local install_dir
   install_dir="$(_select_install_dir)" || return 0
 
@@ -617,7 +685,7 @@ do_check_update() {
     return 1
   fi
 
-  # Ler ambiente da instala├º├úo existente (state file tem prioridade)
+  # Ler ambiente da instalação existente (state file tem prioridade)
   local state_ambiente
   state_ambiente="$(grep '^DFE_AMBIENTE=' "${install_dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || echo "")"
   state_ambiente="${state_ambiente:-QA}"
@@ -647,7 +715,7 @@ do_update() {
     log "ERRO: dfe-update.sh nao encontrado"
     return 1
   fi
-  # Ler ambiente da instala├º├úo existente (state file tem prioridade)
+  # Ler ambiente da instalação existente (state file tem prioridade)
   local state_ambiente
   state_ambiente="$(grep '^DFE_AMBIENTE=' "${install_dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || echo "")"
   state_ambiente="${state_ambiente:-QA}"
@@ -729,7 +797,7 @@ AUTOUPDATE_EOF
   log "Script gerado: $DFE_AUTOUPDATE_SCRIPT"
 }
 
-# Ativa o auto-update com a express├úo cron informada.
+# Ativa o auto-update com a expressão cron informada.
 _set_autoupdate_cron() {
   local cron_expr="$1" descr="$2"
   _write_autoupdate_script
@@ -746,7 +814,7 @@ _set_autoupdate_cron() {
   echo "  Log         : $DFE_AUTOUPDATE_LOG"
 }
 
-# Solicita uma express├úo cron personalizada com exemplos.
+# Solicita uma expressão cron personalizada com exemplos.
 _set_autoupdate_cron_custom() {
   echo ""
   echo "  Formato: minuto hora dia-do-mes mes dia-da-semana"
@@ -825,8 +893,8 @@ echo ""
 # Bootstrap is optional - do NOT exit on failure
 if ! run_bootstrap 2>/dev/null; then
   echo ""
-  echo "AVISO: Verifica├º├úo de depend├¬ncias encontrou alertas (veja acima)."
-  echo "       A instala├º├úo pode continuar normalmente."
+  echo "AVISO: Verificação de dependências encontrou alertas (veja acima)."
+  echo "       A instalação pode continuar normalmente."
   echo ""
 fi
 log "Pronto."

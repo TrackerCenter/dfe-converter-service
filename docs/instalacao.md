@@ -187,35 +187,66 @@ O setup pergunta os mesmos dados de configuração que a instalação inicial.
 
 ## Status do service (opção 4)
 
-Lista todos os serviços `dfe-*` detectados e exibe o status completo:
+Lista todos os serviços `dfe-*` detectados com seu estado atual e permite gerenciá-los diretamente.
+
+### Seleção do serviço
+
+Quando há mais de uma instalação, o setup lista os serviços com o estado em tempo real:
 
 ```
 ==========================================================
-         SELECIONAR SERVICO
+              SELECIONAR SERVICO
 ==========================================================
 
-  1) dfe-converter-qa   (/opt/DFE_CONVERTER_QA)
-  2) dfe-converter-prod (/opt/DFE_CONVERTER_PROD)
+  1) dfe-converter-qa                   [active]
+  2) dfe-converter-prod                 [inactive]
 
-Escolha (1-2): 1
-
-==========================================================
-              STATUS DO SERVICO
-==========================================================
-
-● dfe-converter-qa.service - dfe-converter-qa
-     Loaded: loaded (/etc/systemd/system/dfe-converter-qa.service; enabled)
-     Active: active (running) since Sun 2026-05-03 22:00:00 -03; 5min ago
-   Main PID: 12345 (java)
-        CPU: 1.2s
+Escolha o servico (1-2):
 ```
 
-Se o serviço estiver com falha, as últimas linhas do journal são exibidas para diagnóstico. Após a exibição, pressione ENTER para voltar ao menu.
+### Submenu de ações
+
+Após selecionar o serviço, um submenu é exibido. **O estado `[active/inactive/failed]` é atualizado a cada retorno ao submenu**, e a opção 3 muda dinamicamente:
+
+```
+==========================================================
+   SERVICO: dfe-converter-qa             [active]
+==========================================================
+
+  1) Ver detalhes
+  2) Reiniciar
+  3) Parar
+  4) Voltar
+```
+
+Quando o serviço está parado (`inactive` ou `failed`):
+
+```
+==========================================================
+   SERVICO: dfe-converter-qa             [inactive]
+==========================================================
+
+  1) Ver detalhes
+  2) Reiniciar
+  3) Iniciar
+  4) Voltar
+```
+
+| Ação | Descrição |
+|------|-----------|
+| **1) Ver detalhes** | Exibe a saída completa do `systemctl status`, incluindo últimas linhas do journal |
+| **2) Reiniciar** | Executa `systemctl restart` — útil após alterar o `config.properties` |
+| **3) Parar** | Executa `systemctl stop` (visível quando o serviço está ativo) |
+| **3) Iniciar** | Executa `systemctl start` (visível quando o serviço está parado/com falha) |
+| **4) Voltar** | Retorna ao menu principal |
+
+Após cada ação, o setup exibe o resultado e aguarda ENTER antes de voltar ao submenu.
 
 **Serviço com erro `java: not found`**
 
 ```
 /bin/sh: 1: exec: java: not found
+systemd: dfe-converter-qa.service: Main process exited, code=exited, status=127
 ```
 
 Significa que o Java não está instalado ou não está no `PATH`. Instale com:
@@ -230,6 +261,8 @@ sudo dnf install -y java-17-openjdk-headless
 # Verificar
 java -version
 ```
+
+Após instalar o Java, use a opção **3) Iniciar** para subir o serviço.
 
 ---
 
