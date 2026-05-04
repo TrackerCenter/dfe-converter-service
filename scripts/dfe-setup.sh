@@ -988,7 +988,7 @@ DFE_AMBIENTE="${DFE_AMBIENTE}"
 UPDATE_URL="${RAW_BASE}/dfe-update.sh"
 INSTALL_DIR="${AUTOUPDATE_INSTALL_DIR}"
 STATE_FILE="\${INSTALL_DIR}/.dfe-setup.env"
-REPORT_API_URL="\${TRACKER_API_URL}/api/v1/dfe-converter/versoes/setup/update-report"
+REPORT_API_URL="\${TRACKER_API_URL}/api/v1/dfeConverterRelatorio"
 
 log_au() { printf '%s dfe-autoupdate %s\n' "\$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "\$*"; }
 
@@ -1086,8 +1086,11 @@ log_au "Resultado: status=\${STATUS} versao_anterior=\${OLD_VER} versao_nova=\${
 
 # --- Enviar relatório ao Tracker ---
 if [[ -n "\${TENANT}" && -n "\${TRACKER_API_URL}" ]]; then
-  DESCRICAO_SAFE="\$(printf '%s' "\${DESCRICAO}" | tr -d '\r\n' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')"
-  PAYLOAD="{\"tenant\":\"\${TENANT}\",\"serviceName\":\"\${DFE_SERVICE}\",\"servidor\":\"\${SERVIDOR}\",\"ambiente\":\"\${DFE_AMBIENTE}\",\"versaoAnterior\":\"\${OLD_VER}\",\"versaoNova\":\"\${NEW_VER}\",\"status\":\"\${STATUS}\",\"descricao\":\"\${DESCRICAO_SAFE}\"}"
+  DATA_ISO="\$(date -u +'%Y-%m-%dT%H:%M:%S')"
+  DESC="v\${OLD_VER} -> v\${NEW_VER}"
+  [[ -n "\${DESCRICAO}" ]] && DESC="\${DESC} | \${DESCRICAO}"
+  DESCRICAO_SAFE="\$(printf '%s' "\${DESC}" | tr -d '\r\n' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')"
+  PAYLOAD="{\"tenant\":\"\${TENANT}\",\"modulo\":\"AUTO_UPDATE\",\"status\":\"\${STATUS}\",\"versao\":\"\${NEW_VER}\",\"nomeArquivo\":\"\${DFE_SERVICE}\",\"rotaInterceptada\":\"\${DFE_AMBIENTE}\",\"rotaRedirecionada\":\"\${SERVIDOR}\",\"descricaoStatus\":\"\${DESCRICAO_SAFE}\",\"data\":\"\${DATA_ISO}\"}"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL -X POST -H "Content-Type: application/json" -d "\${PAYLOAD}" "\${REPORT_API_URL}" >/dev/null 2>&1 \
       || log_au "AVISO: falha ao enviar relatorio de atualizacao"
