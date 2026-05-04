@@ -591,10 +591,37 @@ CONFIG_EOF
     --config-source "$tmp_config" \
     --ambiente "$install_ambiente" \
     --versao "${remote_versao:-}" \
-    ${java_home:+--java-home "$java_home"} \
     --yes
   local rc=$?
   rm -f "$tmp_jar" "$tmp_config"
+
+  # 5. Configurar Java embarcado pós-instalação (independente da versão do dfe-install.sh)
+  if [[ $rc -eq 0 && -n "$java_home" && -x "${java_home}/bin/java" ]]; then
+    # Ler nome do serviço do state file gerado pelo instalador
+    local state_file="${install_dir_target}/.dfe-setup.env"
+    local service_name
+    if [[ -f "$state_file" ]]; then
+      service_name="$(grep '^DFE_SERVICE_NAME=' "$state_file" 2>/dev/null | cut -d'=' -f2-)"
+    fi
+    service_name="${service_name:-$([ "$install_ambiente" = "PROD" ] && echo dfe-converter-prod || echo dfe-converter-qa)}"
+
+    # Ajustar permissões do java embarcado para o usuário do serviço (dfeconv)
+    chown -R dfeconv:dfeconv "$java_home" 2>/dev/null || true
+    chmod -R a+rX "$java_home" 2>/dev/null || true
+    find "${java_home}/bin" -type f -exec chmod a+x {} \; 2>/dev/null || true
+
+    # Configurar JAVA_CMD no env file do systemd
+    local env_file="/etc/default/${service_name}"
+    if [[ -f "$env_file" ]]; then
+      sed -i "s|^JAVA_CMD=.*|JAVA_CMD=${java_home%/}/bin/java|" "$env_file"
+      log "JAVA_CMD configurado: ${java_home}/bin/java"
+      systemctl daemon-reload 2>/dev/null || true
+      systemctl restart "${service_name}.service" || true
+    else
+      log "AVISO: env file nao encontrado: ${env_file}"
+    fi
+  fi
+
   return $rc
 }
 
