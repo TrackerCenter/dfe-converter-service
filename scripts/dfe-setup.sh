@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.9.0
+# Versao: 1.10.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.9.0"
+SCRIPT_VERSION="1.10.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
@@ -158,7 +158,180 @@ _select_dfe_ambiente() {
   done
 }
 
-# Baixa um script para $TMP_SCRIPTS/<nome> e garante que _state.sh também
+# Retorna o parâmetro 'arch' da API Azul baseado na arquitetura do servidor.
+_zulu_arch() {
+  case "$(uname -m)" in
+    x86_64)        echo "x86_64" ;;
+    aarch64|arm64) echo "aarch64" ;;
+    armv7*|armhf)  echo "arm32" ;;
+    i686|i386)     echo "x86" ;;
+    *)             echo "x86_64" ;;
+  esac
+}
+
+# Baixa Zulu OpenJDK 8 da Azul e extrai em <install_dir>/java/.
+# Imprime o caminho do diretório java no stdout; todos os prompts/logs vão para stderr.
+_download_zulu_java() {
+  local install_dir="$1"
+  local java_dir="${install_dir}/java"
+
+  echo "" >&2
+  echo "==========================================================" >&2
+  echo "         DOWNLOAD DO JAVA (Azul Zulu OpenJDK 8)" >&2
+  echo "==========================================================" >&2
+  echo "" >&2
+  echo "  1) JRE  - apenas ambiente de execucao (~110 MB, recomendado)" >&2
+  echo "  2) JDK  - kit completo com ferramentas de desenvolvimento (~200 MB)" >&2
+  echo "" >&2
+
+  local type_choice pkg_type
+  while true; do
+    read -rp "Escolha (1-2) [1]: " type_choice >&2
+    type_choice="${type_choice:-1}"
+    case "$type_choice" in
+      1) pkg_type="jre"; break;;
+      2) pkg_type="jdk"; break;;
+      *) echo "Opcao invalida. Escolha 1 ou 2." >&2;;
+    esac
+  done
+
+  local arch
+  arch="$(_zulu_arch)"
+  log "Consultando Azul API (Java 8 ${pkg_type^^} para linux/${arch})..." >&2
+
+  local AZUL_API="https://api.azul.com/metadata/v1/zulu/packages/"
+  local list_url="${AZUL_API}?java_version=8&os=linux&arch=${arch}&java_package_type=${pkg_type}&archive_type=tar.gz&release_status=ga&availability_types=CA&page=1&page_size=1"
+
+  local list_json
+  list_json="$(_http_get_text "$list_url" 2>/dev/null || echo "")"
+
+  if [[ -z "$list_json" || "$list_json" == "[]" ]]; then
+    log "ERRO: nenhum pacote Zulu Java 8 encontrado para linux/${arch}." >&2
+    return 1
+  fi
+
+  local pkg_uuid download_url pkg_name
+  pkg_uuid="$( echo "$list_json" | grep -o '"package_uuid":"[^"]*"' | head -1 | cut -d'"' -f4)"
+  download_url="$(echo "$list_json" | grep -o '"download_url":"[^"]*"'  | head -1 | cut -d'"' -f4)"
+  pkg_name="$(   echo "$list_json" | grep -o '"name":"[^"]*"'           | head -1 | cut -d'"' -f4)"
+
+  if [[ -z "$download_url" || -z "$pkg_uuid" ]]; then
+    log "ERRO: nao foi possivel extrair dados do pacote da API Azul." >&2
+    return 1
+  fi
+
+  # Obter SHA256 via endpoint de detalhes
+  local detail_json sha256 size_bytes
+  detail_json="$(_http_get_text "${AZUL_API}${pkg_uuid}" 2>/dev/null || echo "")"
+  sha256="$(    echo "$detail_json" | grep -o '"sha256_hash":"[^"]*"' | cut -d'"' -f4)"
+  size_bytes="$(echo "$detail_json" | grep -o '"size":[0-9]*'         | cut -d':' -f2)"
+  local size_mb="$(( ${size_bytes:-0} / 1048576 ))"
+
+  echo "" >&2
+  printf "  Pacote  : %s\n"   "$pkg_name" >&2
+  printf "  Versao  : Java 8 (%s/%s)\n" "$pkg_type" "$arch" >&2
+  printf "  Tamanho : ~%s MB\n" "${size_mb:-?}" >&2
+  printf "  Destino : %s\n"   "$java_dir" >&2
+  echo "" >&2
+
+  local yn
+  read -rp "Confirmar download? [S/n]: " yn >&2
+  case "${yn,,}" in
+    ''|s|y|yes|sim) ;;
+    *) log "Download do Java cancelado." >&2; return 1;;
+  esac
+
+  local tmp_tgz
+  tmp_tgz="$(mktemp /tmp/zulu-java8.XXXXXX.tar.gz)"
+
+  log "Baixando ${pkg_name}..." >&2
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --progress-bar "$download_url" -o "$tmp_tgz"
+  elif command -v wget >/dev/null 2>&1; then
+    wget --show-progress -qO "$tmp_tgz" "$download_url" 2>&1
+  else
+    log "ERRO: curl ou wget nao encontrado." >&2
+    rm -f "$tmp_tgz"; return 1
+  fi
+
+  if [[ -n "$sha256" ]]; then
+    log "Verificando integridade (SHA256)..." >&2
+    local actual_sha
+    actual_sha="$(sha256sum "$tmp_tgz" 2>/dev/null | awk '{print $1}' || true)"
+    if [[ -n "$actual_sha" && "$actual_sha" != "$sha256" ]]; then
+      rm -f "$tmp_tgz"
+      log "ERRO: SHA256 invalido. Download pode estar corrompido." >&2
+      return 1
+    fi
+    log "SHA256 verificado." >&2
+  fi
+
+  log "Extraindo para ${java_dir}..." >&2
+  rm -rf "$java_dir"
+  mkdir -p "$java_dir"
+  tar -xzf "$tmp_tgz" -C "$java_dir" --strip-components=1
+  rm -f "$tmp_tgz"
+
+  if [[ ! -x "${java_dir}/bin/java" ]]; then
+    log "ERRO: ${java_dir}/bin/java nao encontrado apos extracao." >&2
+    return 1
+  fi
+
+  local installed_ver
+  installed_ver="$("${java_dir}/bin/java" -version 2>&1 | head -1 || true)"
+  log "Java instalado: ${installed_ver}" >&2
+  echo "$java_dir"
+}
+
+# Garante que Java 8 esteja disponível para a instalação em <install_dir>.
+# Imprime o caminho do diretório java no stdout (vazio = usar 'java' do sistema).
+# Todos os prompts e logs vão para stderr.
+_ensure_java() {
+  local install_dir="$1"
+  local java_dir="${install_dir}/java"
+
+  # 1. Java já embarcado na pasta de instalação
+  if [[ -x "${java_dir}/bin/java" ]]; then
+    local ver
+    ver="$("${java_dir}/bin/java" -version 2>&1 | head -1 || true)"
+    log "Java embarcado encontrado: ${ver}" >&2
+    echo "$java_dir"
+    return 0
+  fi
+
+  # 2. Java no PATH do sistema
+  if command -v java >/dev/null 2>&1; then
+    local sys_ver
+    sys_ver="$(java -version 2>&1 | head -1 || true)"
+    echo "" >&2
+    log "Java do sistema detectado: ${sys_ver}" >&2
+
+    if echo "$sys_ver" | grep -qE '"1\.8\.|"8\.'; then
+      echo "" >&2
+      echo "  1) Usar Java do sistema (ja compativel — recomendado)" >&2
+      echo "  2) Baixar Zulu Java 8 dedicado para esta instalacao" >&2
+      echo "" >&2
+      local jchoice
+      read -rp "Escolha (1-2) [1]: " jchoice >&2
+      jchoice="${jchoice:-1}"
+      if [[ "$jchoice" == "1" ]]; then
+        echo ""  # vazio = JAVA_CMD usará 'java' do PATH
+        return 0
+      fi
+    else
+      log "AVISO: Java do sistema nao e versao 8. O DFe Converter requer Java 8." >&2
+      log "Sera necessario baixar o Zulu Java 8." >&2
+    fi
+  else
+    echo "" >&2
+    log "Java nao encontrado. Baixando Zulu OpenJDK 8 da Azul..." >&2
+  fi
+
+  # 3. Baixar Zulu Java 8
+  _download_zulu_java "$install_dir"
+}
+
+# Baixa um script para $TMP_SCRIPTS/<nome>e garante que _state.sh também
 # esteja disponível no mesmo diretório (dependência de todos os scripts).
 # Apenas o caminho final é impresso no stdout; logs vão para stderr.
 download_script() {
@@ -307,7 +480,18 @@ do_install() {
     *) log "Instalacao cancelada."; return 0;;
   esac
 
-  # 2. Coletar config.properties interativamente
+  # 2.1 Determinar diretório de instalação (mesmo default do dfe-install.sh)
+  local install_dir_target
+  case "${install_ambiente^^}" in
+    PROD) install_dir_target="/opt/DFE_CONVERTER_PROD" ;;
+    *)    install_dir_target="/opt/DFE_CONVERTER_QA" ;;
+  esac
+
+  # 2.2 Garantir Java 8 disponível — pode baixar Zulu se necessário
+  local java_home
+  java_home="$(_ensure_java "$install_dir_target")" || { log "ERRO: Java 8 nao disponivel. Instalacao cancelada."; return 1; }
+
+  # 3. Coletar config.properties interativamente
   echo ""
   echo "=========================================================="
   echo "      CONFIGURACAO DO DFe CONVERTER"
@@ -407,6 +591,7 @@ CONFIG_EOF
     --config-source "$tmp_config" \
     --ambiente "$install_ambiente" \
     --versao "${remote_versao:-}" \
+    ${java_home:+--java-home "$java_home"} \
     --yes
   local rc=$?
   rm -f "$tmp_jar" "$tmp_config"

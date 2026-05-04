@@ -28,13 +28,14 @@ CONFIG_SOURCE=""
 INSTALL_DIR=""
 VERSAO_ARG=""
 AMBIENTE_ARG="QA"
+JAVA_HOME_ARG=""
 
 timestamp() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
 print_help() {
   cat <<EOF
 Uso: sudo $0 [--yes] [--install-dir PATH] [--jar-source PATH] [--config-source PATH]
-             [--versao VERSAO] [--ambiente QA|PROD] [--no-start] [--force] [-h]
+             [--versao VERSAO] [--ambiente QA|PROD] [--java-home PATH] [--no-start] [--force] [-h]
 
 --yes            Aceita todos os defaults sem perguntas
 --install-dir    Diretório de instalação
@@ -42,6 +43,7 @@ Uso: sudo $0 [--yes] [--install-dir PATH] [--jar-source PATH] [--config-source P
 --config-source  Caminho para config.properties (opcional)
 --versao         Versão do JAR (ex: 2.38) para registrar no estado
 --ambiente       QA ou PROD (padrão: QA)
+--java-home      Diretório raiz do Java a usar (ex: /opt/DFE_CONVERTER_QA/java)
 --no-start       Não iniciar/ativar o service após instalar
 --force          Sobrescrever unit/env sem perguntar
 -h, --help       Mostra esta ajuda
@@ -56,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     --config-source) CONFIG_SOURCE="$2"; shift 2;;
     --versao)       VERSAO_ARG="$2"; shift 2;;
     --ambiente)     AMBIENTE_ARG="${2^^}"; shift 2;;
+    --java-home)    JAVA_HOME_ARG="$2"; shift 2;;
     --no-start)     NO_START=true; shift;;
     --force)        FORCE=true; shift;;
     -h|--help)      print_help; exit 0;;
@@ -207,6 +210,13 @@ mkdir -p "$INSTALL_DIR"
 chown "$USER_NAME:$GROUP_NAME" "$INSTALL_DIR"
 chmod 0755 "$INSTALL_DIR"
 
+# Se há java embarcado na pasta de instalação, garantir permissões corretas
+if [[ -n "$JAVA_HOME_ARG" && -d "$JAVA_HOME_ARG" ]]; then
+  chown -R "$USER_NAME:$GROUP_NAME" "$JAVA_HOME_ARG"
+  chmod -R a+rX "$JAVA_HOME_ARG"
+  find "$JAVA_HOME_ARG/bin" -type f -exec chmod a+x {} \; 2>/dev/null || true
+fi
+
 DEST_JAR="${INSTALL_DIR%/}/${JAR_NAME}"
 JAR_CHANGED=false
 if file_differs "$JAR_SOURCE" "$DEST_JAR"; then
@@ -235,8 +245,13 @@ fi
 
 # systemd unit
 ENV_FILE="/etc/default/${SERVICE_NAME}"
+# Se --java-home foi fornecido, aponta JAVA_CMD para o binário embarcado
+JAVA_CMD_VALUE=""
+if [[ -n "$JAVA_HOME_ARG" ]]; then
+  JAVA_CMD_VALUE="${JAVA_HOME_ARG%/}/bin/java"
+fi
 ENV_CONTENT="# /etc/default/${SERVICE_NAME}
-JAVA_CMD=
+JAVA_CMD=${JAVA_CMD_VALUE}
 JAVA_OPTS=\"${JAVA_OPTS}\"
 EXTRA_OPTS=\"\"
 "
@@ -325,18 +340,19 @@ _state_init "$CFG_FILE"
 JAVA_PATH="$(command -v java || echo '')"
 INSTALLED_BY="${SUDO_USER:-$(whoami)}"
 
-_state_write DFE_SERVICE_NAME  "$SERVICE_NAME"   "$CFG_FILE"
-_state_write DFE_JAR_NAME      "$JAR_NAME"       "$CFG_FILE"
-_state_write DFE_CONFIG_NAME   "$CONFIG_NAME"    "$CFG_FILE"
-_state_write DFE_JAVA_PATH     "$JAVA_PATH"      "$CFG_FILE"
-_state_write DFE_LOGS_ENABLED  "false"           "$CFG_FILE"
-_state_write DFE_INSTALL_DIR   "$INSTALL_DIR"    "$CFG_FILE"
-_state_write DFE_INSTALLED_AT  "$(timestamp)"    "$CFG_FILE"
-_state_write DFE_INSTALLED_BY  "$INSTALLED_BY"   "$CFG_FILE"
-_state_write DFE_OS            "linux"           "$CFG_FILE"
-_state_write DFE_VERSAO        "${VERSAO_ARG:-}" "$CFG_FILE"
-_state_write DFE_AMBIENTE      "$AMBIENTE_ARG"   "$CFG_FILE"
-_state_write DFE_CHECKSUM_SHA256 "$JAR_CHECKSUM" "$CFG_FILE"
+_state_write DFE_SERVICE_NAME  "$SERVICE_NAME"          "$CFG_FILE"
+_state_write DFE_JAR_NAME      "$JAR_NAME"              "$CFG_FILE"
+_state_write DFE_CONFIG_NAME   "$CONFIG_NAME"           "$CFG_FILE"
+_state_write DFE_JAVA_PATH     "$JAVA_PATH"             "$CFG_FILE"
+_state_write DFE_JAVA_HOME     "${JAVA_HOME_ARG:-}"     "$CFG_FILE"
+_state_write DFE_LOGS_ENABLED  "false"                  "$CFG_FILE"
+_state_write DFE_INSTALL_DIR   "$INSTALL_DIR"           "$CFG_FILE"
+_state_write DFE_INSTALLED_AT  "$(timestamp)"           "$CFG_FILE"
+_state_write DFE_INSTALLED_BY  "$INSTALLED_BY"          "$CFG_FILE"
+_state_write DFE_OS            "linux"                  "$CFG_FILE"
+_state_write DFE_VERSAO        "${VERSAO_ARG:-}"        "$CFG_FILE"
+_state_write DFE_AMBIENTE      "$AMBIENTE_ARG"          "$CFG_FILE"
+_state_write DFE_CHECKSUM_SHA256 "$JAR_CHECKSUM"        "$CFG_FILE"
 
 echo
 echo "Resumo:"
