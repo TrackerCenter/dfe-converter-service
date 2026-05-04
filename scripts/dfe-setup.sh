@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.6.0
+# Versao: 1.7.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.6.0"
+SCRIPT_VERSION="1.7.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
@@ -74,6 +74,19 @@ _http_get_text() {
     curl -fsSL "$url"
   elif command -v wget >/dev/null 2>&1; then
     wget -qO- "$url"
+  else
+    log "curl ou wget nao encontrado" >&2
+    return 1
+  fi
+}
+
+# Baixa um arquivo grande com barra de progresso visível no terminal.
+_http_get_large() {
+  local url="$1" dest="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --progress-bar "$url" -o "$dest"
+  elif command -v wget >/dev/null 2>&1; then
+    wget --show-progress -O "$dest" "$url" 2>&1
   else
     log "curl ou wget nao encontrado" >&2
     return 1
@@ -241,16 +254,9 @@ do_list_services() {
 do_install() {
   ensure_api_url || return 1
 
-  local path
-  path="$(get_script "$INSTALL_SCRIPT_NAME")"
-  if [[ -z "$path" || ! -f "$path" ]]; then
-    log "ERRO: instalador nao encontrado"
-    return 1
-  fi
-
-  # Busca metadados e baixa o JAR direto da API
-  log "Consultando versao disponivel em $TRACKER_API_URL..."
-  local info_text remote_versao remote_nome
+  # 1. Buscar metadados e mostrar versão disponível
+  log "Consultando versao disponivel ($DFE_AMBIENTE)..."
+  local info_text
   info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${DFE_AMBIENTE}&tipo=JAR" 2>/dev/null || echo "")"
 
   if [[ -z "$info_text" ]]; then
@@ -258,24 +264,134 @@ do_install() {
     return 1
   fi
 
-  remote_versao="$(echo "$info_text" | grep '^DFE_VERSAO=' | cut -d'=' -f2-)"
-  remote_nome="$(echo "$info_text" | grep '^DFE_NOME_ARQUIVO=' | cut -d'=' -f2-)"
+  local remote_versao remote_nome remote_tamanho remote_data
+  remote_versao="$(echo "$info_text" | grep '^DFE_VERSAO='        | cut -d'=' -f2-)"
+  remote_nome="$(echo    "$info_text" | grep '^DFE_NOME_ARQUIVO='  | cut -d'=' -f2-)"
+  remote_tamanho="$(echo "$info_text" | grep '^DFE_TAMANHO_BYTES=' | cut -d'=' -f2-)"
+  remote_data="$(echo    "$info_text" | grep '^DFE_DATA_UPLOAD='   | cut -d'=' -f2-)"
   remote_nome="${remote_nome:-DFe-Converter-${DFE_AMBIENTE}.jar}"
 
-  log "Baixando versao $remote_versao ($remote_nome)..."
+  echo ""
+  echo "=========================================================="
+  echo "         VERSAO DISPONIVEL PARA INSTALACAO"
+  echo "=========================================================="
+  echo ""
+  printf "  Ambiente : %s\n"   "$DFE_AMBIENTE"
+  printf "  Versao   : %s\n"   "${remote_versao:-?}"
+  printf "  Arquivo  : %s\n"   "$remote_nome"
+  printf "  Tamanho  : %s MB\n" "$(( ${remote_tamanho:-0} / 1048576 ))"
+  printf "  Data     : %s\n"   "${remote_data:-?}"
+  echo ""
+  local yn
+  read -rp "Prosseguir com a instalacao? [S/n]: " yn
+  case "${yn,,}" in
+    ''|s|y|yes|sim) ;;
+    *) log "Instalacao cancelada."; return 0;;
+  esac
+
+  # 2. Coletar config.properties interativamente
+  echo ""
+  echo "=========================================================="
+  echo "      CONFIGURACAO DO DFe CONVERTER"
+  echo "=========================================================="
+  echo ""
+  echo "  Pressione ENTER para aceitar o valor padrao."
+  echo ""
+
+  local cfg_tenant
+  read -rp "  sync.tenant (identificador do cliente, obrigatorio): " cfg_tenant
+  if [[ -z "$cfg_tenant" ]]; then
+    log "ERRO: sync.tenant e obrigatorio."
+    return 1
+  fi
+
+  local cfg_port cfg_interval
+  read -rp "  sync.port [9393]: " cfg_port;              cfg_port="${cfg_port:-9393}"
+  read -rp "  sync.intervaloMinutos [15]: " cfg_interval; cfg_interval="${cfg_interval:-15}"
+
+  echo ""
+  echo "  Pastas (separe multiplos caminhos com ;)"
+  echo ""
+  local cfg_pasta_sync cfg_pasta_conv cfg_pasta_proc cfg_pasta_rel
+  read -rp "  Pasta de entrada (sincronizacao) [/dados/xmls]: " cfg_pasta_sync
+  cfg_pasta_sync="${cfg_pasta_sync:-/dados/xmls}"
+  read -rp "  Pasta de saida (convertido) [/dados/saida]: " cfg_pasta_conv
+  cfg_pasta_conv="${cfg_pasta_conv:-/dados/saida}"
+  read -rp "  Pasta de processamento [/dados/processado]: " cfg_pasta_proc
+  cfg_pasta_proc="${cfg_pasta_proc:-/dados/processado}"
+  read -rp "  Pasta de relatorio [/dados/relatorio]: " cfg_pasta_rel
+  cfg_pasta_rel="${cfg_pasta_rel:-/dados/relatorio}"
+
+  local tmp_config
+  tmp_config="$(mktemp /tmp/dfe-config-XXXXXX.properties)"
+  cat > "$tmp_config" <<CONFIG_EOF
+# Configuracao gerada pelo dfe-setup.sh em $(date)
+
+sync.port=${cfg_port}
+sync.intervaloMinutos=${cfg_interval}
+sync.tamanhoLoteEnvio=2000
+sync.tenant=${cfg_tenant}
+
+sync.padraoSaidaTr=true
+sync.ignorarTagsReformaTributaria=true
+sync.proxySalvarArquivoOriginal=true
+sync.proxySalvarArquivoConvertido=true
+sync.proxyConfig=POST|/api/nfe|txt_conteudo.xml
+sync.proxyBaseUrl=https://ws.h.dfe.mastersaf.com.br
+sync.proxyEstrategiaErro=IGNORAR
+
+internet.proxy.enabled=false
+internet.proxy.host=proxy.example.com
+internet.proxy.port=81
+
+nfe.pastas.sincronizacao=${cfg_pasta_sync}
+nfe.pasta.convertido=${cfg_pasta_conv}
+nfe.pasta.processamento=${cfg_pasta_proc}
+nfe.pasta.relatorio=${cfg_pasta_rel}
+nfe.criarTagVNFTot=true
+
+cte.pastas.sincronizacao=${cfg_pasta_sync}
+cte.pasta.convertido=${cfg_pasta_conv}
+cte.pasta.processamento=${cfg_pasta_proc}
+cte.pasta.relatorio=${cfg_pasta_rel}
+
+nfse.pastas.sincronizacao=${cfg_pasta_sync}
+nfse.pasta.convertido=${cfg_pasta_conv}
+nfse.pasta.processamento=${cfg_pasta_proc}
+nfse.pasta.relatorio=${cfg_pasta_rel}
+CONFIG_EOF
+
+  # 3. Baixar instalador e JAR
+  local path
+  path="$(get_script "$INSTALL_SCRIPT_NAME")"
+  if [[ -z "$path" || ! -f "$path" ]]; then
+    rm -f "$tmp_config"
+    log "ERRO: instalador nao encontrado"
+    return 1
+  fi
+
   local tmp_jar
   tmp_jar="$(mktemp /tmp/dfe-jar-XXXXXX.jar)"
 
-  if ! _http_get "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/download?ambiente=${DFE_AMBIENTE}&tipo=JAR" "$tmp_jar"; then
-    rm -f "$tmp_jar"
+  echo ""
+  log "Baixando ${remote_nome} (${DFE_AMBIENTE} v${remote_versao:-?})..."
+  if ! _http_get_large "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/download?ambiente=${DFE_AMBIENTE}&tipo=JAR" "$tmp_jar"; then
+    rm -f "$tmp_jar" "$tmp_config"
     log "ERRO: falha ao baixar o JAR"
     return 1
   fi
 
-  log "Executando instalador"
-  bash "$path" --jar-source "$tmp_jar" --ambiente "$DFE_AMBIENTE" --versao "${remote_versao:-}"
+  # 4. Executar instalador com --yes (defaults por ambiente) + config gerado
+  echo ""
+  log "Executando instalador..."
+  bash "$path" \
+    --jar-source "$tmp_jar" \
+    --config-source "$tmp_config" \
+    --ambiente "$DFE_AMBIENTE" \
+    --versao "${remote_versao:-}" \
+    --yes
   local rc=$?
-  rm -f "$tmp_jar"
+  rm -f "$tmp_jar" "$tmp_config"
   return $rc
 }
 
@@ -294,24 +410,69 @@ do_uninstall() {
 
 do_status() {
   echo ""
-  read -rp "Nome do service: " service_name
-
-  if [[ -z "$service_name" ]]; then
-    echo "Nome vazio"
-    return
-  fi
-
-  echo ""
   echo "=========================================================="
   echo "              STATUS DO SERVICO"
   echo "=========================================================="
   echo ""
 
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl status "${service_name}.service" || echo "Service nao encontrado"
-  else
-    echo "systemctl nao disponivel"
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "  systemctl nao disponivel"
+    return 0
   fi
+
+  # Coletar nomes de serviço a partir dos state files das instalações conhecidas
+  local -a services=()
+  while IFS= read -r dir; do
+    local svc
+    svc="$(grep '^DFE_SERVICE_NAME=' "${dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || true)"
+    svc="${svc%.service}"
+    [[ -n "$svc" ]] && services+=("$svc")
+  done < <(_find_dfe_installations)
+
+  # Fallback: varrer systemctl por units dfe-*
+  if [[ ${#services[@]} -eq 0 ]]; then
+    while IFS= read -r line; do
+      local svc
+      svc="$(printf '%s' "$line" | awk '{print $1}' | sed 's/\.service$//')"
+      [[ -n "$svc" ]] && services+=("$svc")
+    done < <(systemctl list-units --type=service --all --no-legend --no-pager 2>/dev/null \
+      | grep -i 'dfe-' || true)
+  fi
+
+  if [[ ${#services[@]} -eq 0 ]]; then
+    echo "  Nenhum servico dfe-* encontrado."
+    echo "  Use a opcao 1 (Instalar service) para instalar o DFe Converter."
+    echo ""
+    return 0
+  fi
+
+  local service_name
+  if [[ ${#services[@]} -eq 1 ]]; then
+    service_name="${services[0]}"
+    echo "  Servico: $service_name"
+    echo ""
+  else
+    local i=1
+    echo "  Servicos dfe-* encontrados:"
+    echo ""
+    for svc in "${services[@]}"; do
+      printf "  %d) %s\n" "$i" "$svc"
+      (( i++ ))
+    done
+    echo ""
+    local choice
+    read -rp "Escolha o servico (1-${#services[@]}): " choice
+    if [[ ! "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#services[@]} )); then
+      echo "Opcao invalida"
+      return 0
+    fi
+    service_name="${services[$((choice - 1))]}"
+  fi
+
+  echo "=========================================================="
+  echo ""
+  systemctl status "${service_name}.service" --no-pager 2>&1 || true
+  echo ""
 }
 
 # ---------------------------------------------------------------------------
