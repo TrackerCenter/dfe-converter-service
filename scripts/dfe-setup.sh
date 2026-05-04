@@ -236,9 +236,9 @@ _download_zulu_java() {
   echo "" >&2
 
   local yn
-  read -rp "Confirmar download? [S/n]: " yn >&2
+  read -rp "Confirmar download? [y/N]: " yn >&2
   case "${yn,,}" in
-    ''|s|y|yes|sim) ;;
+    y|yes|sim) ;;
     *) log "Download do Java cancelado." >&2; return 1;;
   esac
 
@@ -524,12 +524,15 @@ do_install() {
   printf "  Data     : %s\n"   "${remote_data:-?}"
   echo ""
 
-  # 2.1 Determinar diretório de instalação (mesmo default do dfe-install.sh)
-  local install_dir_target
+  # 2.1 Determinar diretório de instalação
+  local install_dir_default
   case "${install_ambiente^^}" in
-    PROD) install_dir_target="/opt/DFE_CONVERTER_PROD" ;;
-    *)    install_dir_target="/opt/DFE_CONVERTER_QA" ;;
+    PROD) install_dir_default="/opt/DFE_CONVERTER_PROD" ;;
+    *)    install_dir_default="/opt/DFE_CONVERTER_QA" ;;
   esac
+  local install_dir_target
+  read -rp "  Diretorio de instalacao [${install_dir_default}]: " install_dir_target
+  install_dir_target="${install_dir_target:-$install_dir_default}"
 
   # 2.2 Verificar se versão já instalada corresponde à disponível — evitar download desnecessário
   if [[ "$force_jar" != "force" && -n "$remote_versao" ]]; then
@@ -541,18 +544,18 @@ do_install() {
     if [[ -n "$installed_versao" && "$installed_versao" == "$remote_versao" ]]; then
       echo "  Versao instalada ($installed_versao) ja e a mais recente."
       local yn_force
-      read -rp "  Forcar reinstalacao do JAR mesmo assim? [s/N]: " yn_force
+      read -rp "  Forcar reinstalacao do JAR mesmo assim? [y/N]: " yn_force
       case "${yn_force,,}" in
-        s|y|yes|sim) ;;
+        y|yes|sim) ;;
         *) log "Operacao cancelada."; return 0;;
       esac
     fi
   fi
 
   local yn
-  read -rp "Prosseguir com a instalacao? [S/n]: " yn
+  read -rp "Prosseguir com a instalacao? [y/N]: " yn
   case "${yn,,}" in
-    ''|s|y|yes|sim) ;;
+    y|yes|sim) ;;
     *) log "Instalacao cancelada."; return 0;;
   esac
 
@@ -992,9 +995,9 @@ do_update() {
     echo ""
     log "Nenhuma instalacao valida encontrada."
     local yn
-    read -rp "Deseja realizar a instalacao inicial agora? [S/n]: " yn
+    read -rp "Deseja realizar a instalacao inicial agora? [y/N]: " yn
     case "${yn,,}" in
-      ''|s|y|yes|sim) do_install; return $?;;
+      y|yes|sim) do_install; return $?;;
       *) return 0;;
     esac
   fi
@@ -1098,6 +1101,7 @@ set -o nounset
 TRACKER_API_URL="${TRACKER_API_URL}"
 DFE_AMBIENTE="${DFE_AMBIENTE}"
 UPDATE_URL="${RAW_BASE}/dfe-update.sh"
+STATE_URL="${RAW_BASE}/_state.sh"
 INSTALL_DIR="${AUTOUPDATE_INSTALL_DIR}"
 STATE_FILE="\${INSTALL_DIR}/.dfe-setup.env"
 REPORT_API_URL="\${TRACKER_API_URL}/api/v1/dfeConverterRelatorio"
@@ -1276,8 +1280,8 @@ _remove_autoupdate_cron() {
   crontab "$tmp_cron"
   rm -f "$tmp_cron"
   local remove_script
-  read -rp "Remover tambem o script ${DFE_AUTOUPDATE_SCRIPT}? [s/N]: " remove_script
-  if [[ "${remove_script,,}" == "s" ]]; then
+  read -rp "Remover tambem o script ${DFE_AUTOUPDATE_SCRIPT}? [y/N]: " remove_script
+  if [[ "${remove_script,,}" == "y" || "${remove_script,,}" == "yes" || "${remove_script,,}" == "sim" ]]; then
     rm -f "$DFE_AUTOUPDATE_SCRIPT"
     log "Script removido"
   fi
