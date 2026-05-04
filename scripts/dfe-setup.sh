@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # dfe-setup.sh - Menu interativo (Linux)
-# Versao: 1.7.0
+# Versao: 1.8.0
 set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_VERSION="1.7.0"
+SCRIPT_VERSION="1.8.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
+# RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ ├® substitu├¡do
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
 RAW_BASE="${DFESCRIPTS_RAW_BASE:-__TRACKER_BASE_URL__/api/v1/dfe-converter/versoes/setup/scripts/linux}"
 
-# Diretório temporário para scripts baixados da rede.
-# Usar nomes previsíveis (não mktemp por arquivo) garante que _state.sh
+# Diret├│rio tempor├írio para scripts baixados da rede.
+# Usar nomes previs├¡veis (n├úo mktemp por arquivo) garante que _state.sh
 # fique no mesmo SCRIPT_DIR que os scripts que fazem source dele.
 TMP_SCRIPTS="$(mktemp -d /tmp/dfe-scripts.XXXXXX)"
 trap 'rm -rf "$TMP_SCRIPTS"' EXIT
@@ -53,8 +53,8 @@ ensure_root() {
   fi
 }
 
-# Baixa um único arquivo para o destino informado.
-# Toda saída vai para stderr para não contaminar capturas via $().
+# Baixa um ├║nico arquivo para o destino informado.
+# Toda sa├¡da vai para stderr para n├úo contaminar capturas via $().
 _http_get() {
   local url="$1" dest="$2"
   if command -v curl >/dev/null 2>&1; then
@@ -67,7 +67,7 @@ _http_get() {
   fi
 }
 
-# Retorna o conteúdo de uma URL no stdout.
+# Retorna o conte├║do de uma URL no stdout.
 _http_get_text() {
   local url="$1"
   if command -v curl >/dev/null 2>&1; then
@@ -80,7 +80,7 @@ _http_get_text() {
   fi
 }
 
-# Baixa um arquivo grande com barra de progresso visível no terminal.
+# Baixa um arquivo grande com barra de progresso vis├¡vel no terminal.
 _http_get_large() {
   local url="$1" dest="$2"
   if command -v curl >/dev/null 2>&1; then
@@ -93,9 +93,10 @@ _http_get_large() {
   fi
 }
 
-# Solicita ao usuário a URL do Tracker e o ambiente (QA/PROD/personalizado).
-# Define TRACKER_API_URL e DFE_AMBIENTE globalmente para toda a sessão.
-# Não faz nada se TRACKER_API_URL já estiver definida.
+# Solicita ao usu├írio qual servidor do Tracker usar para buscar scripts e execut├íveis.
+# Define TRACKER_API_URL globalmente para toda a sess├úo.
+# N├úo faz nada se TRACKER_API_URL j├í estiver definida.
+# NOTA: a URL do servidor ├® independente do ambiente do execut├ível (QA/PROD).
 ensure_api_url() {
   if [[ -n "$TRACKER_API_URL" ]]; then
     return 0
@@ -103,11 +104,14 @@ ensure_api_url() {
 
   echo ""
   echo "=========================================================="
-  echo "          SELECIONAR AMBIENTE DO TRACKER"
+  echo "         SELECIONAR SERVIDOR DO TRACKER"
   echo "=========================================================="
   echo ""
-  echo "  1) QA   - https://qa.trackercenter.com.br/app"
-  echo "  2) PROD - https://prod.trackercenter.com.br/app"
+  echo "  Define de onde baixar os scripts e executaveis."
+  echo "  Ambos os servidores contem executaveis de QA e PROD."
+  echo ""
+  echo "  1) QA   - https://qa.trackercenter.com.br/app (mais recente)"
+  echo "  2) PROD - https://prod.trackercenter.com.br/app (estavel)"
   echo "  3) URL personalizada"
   echo ""
 
@@ -115,38 +119,48 @@ ensure_api_url() {
   while true; do
     read -rp "Escolha (1-3): " choice
     case "$choice" in
-      1)
-        TRACKER_API_URL="https://qa.trackercenter.com.br/app"
-        DFE_AMBIENTE="QA"
-        break
-        ;;
-      2)
-        TRACKER_API_URL="https://prod.trackercenter.com.br/app"
-        DFE_AMBIENTE="PROD"
-        break
-        ;;
+      1) TRACKER_API_URL="https://qa.trackercenter.com.br/app"; break;;
+      2) TRACKER_API_URL="https://prod.trackercenter.com.br/app"; break;;
       3)
-        local custom_url custom_amb
+        local custom_url
         read -rp "URL base do Tracker (ex: https://tracker.seudominio.com/app): " custom_url
         TRACKER_API_URL="${custom_url%/}"
-        read -rp "Ambiente (QA/PROD) [QA]: " custom_amb
-        DFE_AMBIENTE="${custom_amb:-QA}"
-        DFE_AMBIENTE="${DFE_AMBIENTE^^}"
         break
         ;;
-      *)
-        echo "Opcao invalida. Escolha 1, 2 ou 3."
-        ;;
+      *) echo "Opcao invalida. Escolha 1, 2 ou 3.";;
     esac
   done
 
   echo ""
-  log "Ambiente: $DFE_AMBIENTE | URL: $TRACKER_API_URL"
+  log "Servidor: $TRACKER_API_URL"
 }
 
-# Baixa um script para $TMP_SCRIPTS/<nome> e garante que _state.sh também
-# esteja disponível no mesmo diretório (dependência de todos os scripts).
-# Apenas o caminho final é impresso no stdout; logs vão para stderr.
+# Solicita ao usu├írio qual vers├úo do execut├ível DFe Converter instalar/atualizar.
+# Imprime QA ou PROD no stdout; mensagens de prompt v├úo para stderr.
+# Independente da URL do servidor selecionada em ensure_api_url().
+_select_dfe_ambiente() {
+  echo "" >&2
+  echo "==========================================================" >&2
+  echo "     VERSAO DO DFe CONVERTER A INSTALAR/ATUALIZAR" >&2
+  echo "==========================================================" >&2
+  echo "" >&2
+  echo "  1) QA   - DFe-Converter-QA.jar  (homologacao/testes)" >&2
+  echo "  2) PROD - DFe-Converter-PROD.jar (producao)" >&2
+  echo "" >&2
+  local choice
+  while true; do
+    read -rp "Escolha (1-2): " choice
+    case "$choice" in
+      1) echo "QA";   return 0;;
+      2) echo "PROD"; return 0;;
+      *) echo "Opcao invalida. Escolha 1 ou 2." >&2;;
+    esac
+  done
+}
+
+# Baixa um script para $TMP_SCRIPTS/<nome> e garante que _state.sh tamb├®m
+# esteja dispon├¡vel no mesmo diret├│rio (depend├¬ncia de todos os scripts).
+# Apenas o caminho final ├® impresso no stdout; logs v├úo para stderr.
 download_script() {
   local name="$1"
   local dest="${TMP_SCRIPTS}/${name}"
@@ -170,8 +184,8 @@ download_script() {
 }
 
 # Retorna o caminho do script: local (SCRIPT_DIR) tem prioridade,
-# depois cache TMP_SCRIPTS, por último baixa da rede.
-# Apenas o caminho é impresso no stdout; logs vão para stderr.
+# depois cache TMP_SCRIPTS, por ├║ltimo baixa da rede.
+# Apenas o caminho ├® impresso no stdout; logs v├úo para stderr.
 get_script() {
   local name="$1"
   local local_path="${SCRIPT_DIR}/${name}"
@@ -214,8 +228,8 @@ show_menu() {
   2) Remover service
   3) Reinstalar
   4) Status do service
-  5) Listar serviços dfe instalados
-  6) Verificar atualização
+  5) Listar servi├ºos dfe instalados
+  6) Verificar atualiza├º├úo
   7) Baixar e atualizar JAR
   8) Configurar auto-update
   9) Sair
@@ -226,23 +240,23 @@ EOF
 do_list_services() {
   echo ""
   echo "=========================================================="
-  echo "           SERVIÇOS dfe-* INSTALADOS"
+  echo "           SERVI├çOS dfe-* INSTALADOS"
   echo "=========================================================="
   echo ""
   if ! command -v systemctl >/dev/null 2>&1; then
-    echo "systemctl não disponível"
+    echo "systemctl n├úo dispon├¡vel"
     return
   fi
 
-  # Lista todos os units dfe-* carregados (ativos ou não)
+  # Lista todos os units dfe-* carregados (ativos ou n├úo)
   local found
   found="$(systemctl list-units --type=service --all --no-legend --no-pager 2>/dev/null \
     | grep -i 'dfe-' || true)"
 
   if [[ -z "$found" ]]; then
-    echo "  Nenhum serviço dfe-* encontrado."
+    echo "  Nenhum servi├ºo dfe-* encontrado."
   else
-    printf "  %-40s %-12s %-10s %s\n" "SERVIÇO" "STATUS" "ATIVO" "DESCRIÇÃO"
+    printf "  %-40s %-12s %-10s %s\n" "SERVI├çO" "STATUS" "ATIVO" "DESCRI├ç├âO"
     echo "  -----------------------------------------------------------------------"
     while IFS= read -r line; do
       printf "  %s\n" "$line"
@@ -254,10 +268,14 @@ do_list_services() {
 do_install() {
   ensure_api_url || return 1
 
-  # 1. Buscar metadados e mostrar versão disponível
-  log "Consultando versao disponivel ($DFE_AMBIENTE)..."
+  # 0. Selecionar qual execut├ível instalar (QA ou PROD) ÔÇö independente do servidor
+  local install_ambiente
+  install_ambiente="$(_select_dfe_ambiente)"
+
+  # 1. Buscar metadados e mostrar vers├úo dispon├¡vel
+  log "Consultando versao disponivel ($install_ambiente)..."
   local info_text
-  info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${DFE_AMBIENTE}&tipo=JAR" 2>/dev/null || echo "")"
+  info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${install_ambiente}&tipo=JAR" 2>/dev/null || echo "")"
 
   if [[ -z "$info_text" ]]; then
     log "ERRO: nao foi possivel obter informacoes de versao. Verifique a URL e conectividade."
@@ -269,14 +287,14 @@ do_install() {
   remote_nome="$(echo    "$info_text" | grep '^DFE_NOME_ARQUIVO='  | cut -d'=' -f2-)"
   remote_tamanho="$(echo "$info_text" | grep '^DFE_TAMANHO_BYTES=' | cut -d'=' -f2-)"
   remote_data="$(echo    "$info_text" | grep '^DFE_DATA_UPLOAD='   | cut -d'=' -f2-)"
-  remote_nome="${remote_nome:-DFe-Converter-${DFE_AMBIENTE}.jar}"
+  remote_nome="${remote_nome:-DFe-Converter-${install_ambiente}.jar}"
 
   echo ""
   echo "=========================================================="
   echo "         VERSAO DISPONIVEL PARA INSTALACAO"
   echo "=========================================================="
   echo ""
-  printf "  Ambiente : %s\n"   "$DFE_AMBIENTE"
+  printf "  Ambiente : %s\n"   "$install_ambiente"
   printf "  Versao   : %s\n"   "${remote_versao:-?}"
   printf "  Arquivo  : %s\n"   "$remote_nome"
   printf "  Tamanho  : %s MB\n" "$(( ${remote_tamanho:-0} / 1048576 ))"
@@ -374,8 +392,8 @@ CONFIG_EOF
   tmp_jar="$(mktemp /tmp/dfe-jar-XXXXXX.jar)"
 
   echo ""
-  log "Baixando ${remote_nome} (${DFE_AMBIENTE} v${remote_versao:-?})..."
-  if ! _http_get_large "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/download?ambiente=${DFE_AMBIENTE}&tipo=JAR" "$tmp_jar"; then
+  log "Baixando ${remote_nome} (${install_ambiente} v${remote_versao:-?})..."
+  if ! _http_get_large "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/download?ambiente=${install_ambiente}&tipo=JAR" "$tmp_jar"; then
     rm -f "$tmp_jar" "$tmp_config"
     log "ERRO: falha ao baixar o JAR"
     return 1
@@ -387,7 +405,7 @@ CONFIG_EOF
   bash "$path" \
     --jar-source "$tmp_jar" \
     --config-source "$tmp_config" \
-    --ambiente "$DFE_AMBIENTE" \
+    --ambiente "$install_ambiente" \
     --versao "${remote_versao:-}" \
     --yes
   local rc=$?
@@ -420,7 +438,7 @@ do_status() {
     return 0
   fi
 
-  # Coletar nomes de serviço a partir dos state files das instalações conhecidas
+  # Coletar nomes de servi├ºo a partir dos state files das instala├º├Áes conhecidas
   local -a services=()
   while IFS= read -r dir; do
     local svc
@@ -476,21 +494,21 @@ do_status() {
 }
 
 # ---------------------------------------------------------------------------
-# Detecção de instalações existentes
+# Detec├º├úo de instala├º├Áes existentes
 # ---------------------------------------------------------------------------
 
-# Retorna (um por linha) os diretórios onde há uma instalação do DFe Converter.
-# Verifica locais padrão + qualquer dir sob /opt com .dfe-setup.env.
+# Retorna (um por linha) os diret├│rios onde h├í uma instala├º├úo do DFe Converter.
+# Verifica locais padr├úo + qualquer dir sob /opt com .dfe-setup.env.
 _find_dfe_installations() {
   local -A seen=()
-  # Locais padrão conhecidos
+  # Locais padr├úo conhecidos
   for dir in /opt/DFE_CONVERTER_QA /opt/DFE_CONVERTER_PROD /opt/dfe-converter; do
     if [[ -f "${dir}/.dfe-setup.env" ]] && [[ -z "${seen[$dir]+x}" ]]; then
       seen[$dir]=1
       echo "$dir"
     fi
   done
-  # Varredura geral em /opt (até 3 níveis)
+  # Varredura geral em /opt (at├® 3 n├¡veis)
   while IFS= read -r envfile; do
     local d
     d="$(dirname "$envfile")"
@@ -501,8 +519,8 @@ _find_dfe_installations() {
   done < <(find /opt -maxdepth 3 -name ".dfe-setup.env" 2>/dev/null || true)
 }
 
-# Solicita ao usuário que selecione (ou informe) o diretório de instalação.
-# Imprime o diretório escolhido no stdout; retorna 1 se o usuário cancelar.
+# Solicita ao usu├írio que selecione (ou informe) o diret├│rio de instala├º├úo.
+# Imprime o diret├│rio escolhido no stdout; retorna 1 se o usu├írio cancelar.
 _select_install_dir() {
   local installations=()
   while IFS= read -r dir; do
@@ -534,7 +552,7 @@ _select_install_dir() {
     return 0
   fi
 
-  # Múltiplas instalações — deixa o usuário escolher
+  # M├║ltiplas instala├º├Áes ÔÇö deixa o usu├írio escolher
   echo "" >&2
   echo "  Instalacoes encontradas:" >&2
   local i=1
@@ -560,33 +578,35 @@ _select_install_dir() {
 do_check_update() {
   ensure_api_url || return 1
 
-  # Listar todos os arquivos disponíveis na última versão
+  # Listar todos os arquivos dispon├¡veis na ├║ltima vers├úo (QA e PROD)
   echo ""
   echo "=========================================================="
   echo "       ARQUIVOS DISPONIVEIS NA ULTIMA VERSAO"
   echo "=========================================================="
   echo ""
-  printf "  %-5s  %-35s  %-10s  %8s  %s\n" "TIPO" "NOME" "VERSAO" "TAMANHO" "DATA UPLOAD"
-  echo "  ---------------------------------------------------------------"
-  for tipo in JAR EXE; do
-    local info_text
-    info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${DFE_AMBIENTE}&tipo=${tipo}" 2>/dev/null || echo "")"
-    if [[ -n "$info_text" ]]; then
-      local remote_versao remote_nome remote_tamanho remote_data
-      remote_versao="$(echo "$info_text" | grep '^DFE_VERSAO='        | cut -d'=' -f2-)"
-      remote_nome="$(echo   "$info_text" | grep '^DFE_NOME_ARQUIVO='  | cut -d'=' -f2-)"
-      remote_tamanho="$(echo "$info_text" | grep '^DFE_TAMANHO_BYTES=' | cut -d'=' -f2-)"
-      remote_data="$(echo   "$info_text" | grep '^DFE_DATA_UPLOAD='   | cut -d'=' -f2-)"
-      printf "  %-5s  %-35s  %-10s  %5s MB  %s\n" \
-        "$tipo" "${remote_nome:-?}" "${remote_versao:-?}" \
-        "$(( ${remote_tamanho:-0} / 1048576 ))" "${remote_data:-?}"
-    else
-      printf "  %-5s  (nao disponivel)\n" "$tipo"
-    fi
+  printf "  %-5s  %-5s  %-35s  %-10s  %8s  %s\n" "AMB" "TIPO" "NOME" "VERSAO" "TAMANHO" "DATA UPLOAD"
+  echo "  -----------------------------------------------------------------------"
+  for amb in QA PROD; do
+    for tipo in JAR EXE; do
+      local info_text
+      info_text="$(_http_get_text "${TRACKER_API_URL}/api/v1/dfe-converter/versoes/latest/info?ambiente=${amb}&tipo=${tipo}" 2>/dev/null || echo "")"
+      if [[ -n "$info_text" ]]; then
+        local remote_versao remote_nome remote_tamanho remote_data
+        remote_versao="$(echo "$info_text" | grep '^DFE_VERSAO='        | cut -d'=' -f2-)"
+        remote_nome="$(echo   "$info_text" | grep '^DFE_NOME_ARQUIVO='  | cut -d'=' -f2-)"
+        remote_tamanho="$(echo "$info_text" | grep '^DFE_TAMANHO_BYTES=' | cut -d'=' -f2-)"
+        remote_data="$(echo   "$info_text" | grep '^DFE_DATA_UPLOAD='   | cut -d'=' -f2-)"
+        printf "  %-5s  %-5s  %-35s  %-10s  %5s MB  %s\n" \
+          "$amb" "$tipo" "${remote_nome:-?}" "${remote_versao:-?}" \
+          "$(( ${remote_tamanho:-0} / 1048576 ))" "${remote_data:-?}"
+      else
+        printf "  %-5s  %-5s  (nao disponivel)\n" "$amb" "$tipo"
+      fi
+    done
   done
   echo ""
 
-  # Detectar instalações existentes para verificar se há atualização pendente
+  # Detectar instala├º├Áes existentes para verificar se h├í atualiza├º├úo pendente
   local install_dir
   install_dir="$(_select_install_dir)" || return 0
 
@@ -596,7 +616,13 @@ do_check_update() {
     log "ERRO: dfe-update.sh nao encontrado"
     return 1
   fi
-  bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$DFE_AMBIENTE" --install-dir "$install_dir"
+
+  # Ler ambiente da instala├º├úo existente (state file tem prioridade)
+  local state_ambiente
+  state_ambiente="$(grep '^DFE_AMBIENTE=' "${install_dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || echo "")"
+  state_ambiente="${state_ambiente:-QA}"
+
+  bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$state_ambiente" --install-dir "$install_dir"
   return $?
 }
 
@@ -621,7 +647,12 @@ do_update() {
     log "ERRO: dfe-update.sh nao encontrado"
     return 1
   fi
-  bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$DFE_AMBIENTE" --install-dir "$install_dir" --yes
+  # Ler ambiente da instala├º├úo existente (state file tem prioridade)
+  local state_ambiente
+  state_ambiente="$(grep '^DFE_AMBIENTE=' "${install_dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- || echo "")"
+  state_ambiente="${state_ambiente:-QA}"
+
+  bash "$path" --api-url "$TRACKER_API_URL" --ambiente "$state_ambiente" --install-dir "$install_dir" --yes
   return $?
 }
 
@@ -698,7 +729,7 @@ AUTOUPDATE_EOF
   log "Script gerado: $DFE_AUTOUPDATE_SCRIPT"
 }
 
-# Ativa o auto-update com a expressão cron informada.
+# Ativa o auto-update com a express├úo cron informada.
 _set_autoupdate_cron() {
   local cron_expr="$1" descr="$2"
   _write_autoupdate_script
@@ -715,7 +746,7 @@ _set_autoupdate_cron() {
   echo "  Log         : $DFE_AUTOUPDATE_LOG"
 }
 
-# Solicita uma expressão cron personalizada com exemplos.
+# Solicita uma express├úo cron personalizada com exemplos.
 _set_autoupdate_cron_custom() {
   echo ""
   echo "  Formato: minuto hora dia-do-mes mes dia-da-semana"
@@ -760,6 +791,12 @@ _remove_autoupdate_cron() {
 
 do_autoupdate() {
   ensure_api_url || return 1
+
+  # DFE_AMBIENTE precisa estar definido para o script de auto-update
+  if [[ -z "${DFE_AMBIENTE:-}" ]]; then
+    DFE_AMBIENTE="$(_select_dfe_ambiente)"
+  fi
+
   _show_autoupdate_status
   echo "  1) Ativar - Todo dia as 01:00"
   echo "  2) Ativar - Toda segunda-feira as 01:00"
@@ -788,8 +825,8 @@ echo ""
 # Bootstrap is optional - do NOT exit on failure
 if ! run_bootstrap 2>/dev/null; then
   echo ""
-  echo "AVISO: Verificação de dependências encontrou alertas (veja acima)."
-  echo "       A instalação pode continuar normalmente."
+  echo "AVISO: Verifica├º├úo de depend├¬ncias encontrou alertas (veja acima)."
+  echo "       A instala├º├úo pode continuar normalmente."
   echo ""
 fi
 log "Pronto."
