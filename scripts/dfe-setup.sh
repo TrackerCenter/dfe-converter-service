@@ -1030,22 +1030,57 @@ _show_autoupdate_status() {
   if [[ -n "$current_cron" ]]; then
     local cron_expr
     cron_expr="$(echo "$current_cron" | sed "s|${DFE_AUTOUPDATE_SCRIPT}.*||" | xargs)"
-    echo "  Status      : ATIVO"
+    echo "  Status      : [ATIVO]"
     echo "  Agendamento : $cron_expr"
   else
-    echo "  Status      : INATIVO"
+    echo "  Status      : [INATIVO]"
   fi
+
   if [[ -f "$DFE_AUTOUPDATE_SCRIPT" ]]; then
-    local configured_url configured_env
-    configured_url="$(grep '^TRACKER_API_URL=' "$DFE_AUTOUPDATE_SCRIPT" 2>/dev/null \
-      | cut -d'"' -f2 || true)"
-    configured_env="$(grep '^DFE_AMBIENTE=' "$DFE_AUTOUPDATE_SCRIPT" 2>/dev/null \
-      | cut -d'"' -f2 || true)"
+    local configured_url configured_env configured_dir
+    configured_url="$(grep '^TRACKER_API_URL=' "$DFE_AUTOUPDATE_SCRIPT" 2>/dev/null | cut -d'"' -f2 || true)"
+    configured_env="$(grep '^DFE_AMBIENTE='    "$DFE_AUTOUPDATE_SCRIPT" 2>/dev/null | cut -d'"' -f2 || true)"
+    configured_dir="$(grep '^INSTALL_DIR='     "$DFE_AUTOUPDATE_SCRIPT" 2>/dev/null | cut -d'"' -f2 || true)"
     echo "  Script      : $DFE_AUTOUPDATE_SCRIPT"
     [[ -n "$configured_url" ]] && echo "  URL         : $configured_url"
     [[ -n "$configured_env" ]] && echo "  Ambiente    : $configured_env"
+    if [[ -n "$configured_dir" ]]; then
+      echo "  Install dir : $configured_dir"
+      local state_file="${configured_dir}/.dfe-setup.env"
+      if [[ -f "$state_file" ]]; then
+        echo "  State file  : OK ($state_file)"
+      else
+        echo "  State file  : AVISO - nao encontrado ($state_file)"
+      fi
+    fi
+    if [[ ! -x "$DFE_AUTOUPDATE_SCRIPT" ]]; then
+      echo "  AVISO       : script nao tem permissao de execucao"
+    fi
+  else
+    echo "  Script      : nao encontrado ($DFE_AUTOUPDATE_SCRIPT)"
   fi
+
   echo "  Log         : $DFE_AUTOUPDATE_LOG"
+
+  if [[ -f "$DFE_AUTOUPDATE_LOG" ]]; then
+    local last_run
+    last_run="$(tail -1 "$DFE_AUTOUPDATE_LOG" 2>/dev/null | grep -o '^[0-9T:Z-]*' || true)"
+    [[ -n "$last_run" ]] && echo "  Ultima exec : $last_run"
+    echo ""
+    echo "  --- Ultimas entradas do log ---"
+    tail -8 "$DFE_AUTOUPDATE_LOG" 2>/dev/null | while IFS= read -r l; do echo "  $l"; done
+    echo "  --- (log completo: tail -50 $DFE_AUTOUPDATE_LOG) ---"
+  else
+    echo ""
+    echo "  Log ainda nao existe. Para verificar apos a proxima execucao:"
+    echo "    tail -f $DFE_AUTOUPDATE_LOG"
+    echo ""
+    echo "  Para testar manualmente agora:"
+    echo "    sudo $DFE_AUTOUPDATE_SCRIPT"
+    echo ""
+    echo "  Para verificar o cron (root):"
+    echo "    sudo crontab -l"
+  fi
   echo ""
 }
 
@@ -1102,25 +1137,31 @@ BACKUP_JAR="\${JAR_PATH}.bak"
 [[ -f "\${JAR_PATH}" ]] && cp "\${JAR_PATH}" "\${BACKUP_JAR}"
 
 # --- Executar atualização ---
-tmpscript="\$(mktemp /tmp/dfe-update.XXXXXX.sh)"
+_dl() {
+  local url="\$1" dest="\$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "\$url" -o "\$dest"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "\$dest" "\$url"
+  else
+    log_au "ERRO: curl ou wget nao encontrado"
+    return 1
+  fi
+}
+tmpdir="\$(mktemp -d /tmp/dfe-update.XXXXXX)" || { log_au "ERRO: falha ao criar diretorio temporario"; exit 1; }
 UPDATE_RC=0
-if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "\${UPDATE_URL}" -o "\${tmpscript}" || UPDATE_RC=\$?
-elif command -v wget >/dev/null 2>&1; then
-  wget -qO "\${tmpscript}" "\${UPDATE_URL}" || UPDATE_RC=\$?
-else
-  log_au "ERRO: curl ou wget nao encontrado"
-  UPDATE_RC=1
-fi
-
-if [[ \$UPDATE_RC -eq 0 ]]; then
-  chmod +x "\${tmpscript}"
+if _dl "\${UPDATE_URL}" "\${tmpdir}/dfe-update.sh" && \
+   _dl "\${STATE_URL}" "\${tmpdir}/_state.sh"; then
+  chmod +x "\${tmpdir}/dfe-update.sh"
   set +o nounset
-  bash "\${tmpscript}" --api-url "\${TRACKER_API_URL}" --ambiente "\${DFE_AMBIENTE}" --install-dir "\${INSTALL_DIR}" --yes
+  bash "\${tmpdir}/dfe-update.sh" --api-url "\${TRACKER_API_URL}" --ambiente "\${DFE_AMBIENTE}" --install-dir "\${INSTALL_DIR}" --yes
   UPDATE_RC=\$?
   set -o nounset
+else
+  log_au "ERRO: falha ao baixar scripts de atualizacao"
+  UPDATE_RC=1
 fi
-rm -f "\${tmpscript}"
+rm -rf "\${tmpdir}"
 
 NEW_VER="\$(_read_state DFE_VERSAO)"
 STATUS="SUCESSO"
