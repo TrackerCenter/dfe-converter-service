@@ -258,6 +258,19 @@ function Add-OrUpdate-InstallRecord {
     Write-Host "JSON state gravado em: $cfgPath"
 }
 
+# Write or update a single key in the .dfe-setup.env file (key=value format)
+function Write-EnvState {
+    param([string]$Key, [string]$Value, [string]$File)
+    if (-not (Test-Path $File)) { New-Item -ItemType File -Path $File -Force | Out-Null }
+    $content = @(Get-Content $File -ErrorAction SilentlyContinue)
+    $found = $false
+    $newContent = $content | ForEach-Object {
+        if ($_ -match "^${Key}=") { "${Key}=${Value}"; $found = $true } else { $_ }
+    }
+    if (-not $found) { $newContent = @($newContent) + "${Key}=${Value}" }
+    Set-Content -Path $File -Value $newContent -Encoding UTF8
+}
+
 $cfgPath = Join-Path $InstallDir ".dfe-setup.json"
 $installedBy = $env:USERNAME
 $installedAt = (Get-Date).ToString("o")
@@ -281,6 +294,18 @@ $record = @{
     os = "windows"
 }
 Add-OrUpdate-InstallRecord -cfgPath $cfgPath -record $record
+
+# Write .dfe-setup.env in key=value format (required by dfe-update.ps1)
+$envPath = Join-Path $InstallDir ".dfe-setup.env"
+$ambienteVal = if ($envChoice -eq 'PROD') { 'PROD' } elseif ($envChoice -eq 'QA') { 'QA' } else { '' }
+Write-EnvState "DFE_SERVICE_NAME" $ServiceName $envPath
+Write-EnvState "DFE_JAR_NAME"     $JarName     $envPath
+Write-EnvState "DFE_CONFIG_NAME"  $ConfigName  $envPath
+Write-EnvState "DFE_VERSAO"       ""           $envPath
+Write-EnvState "DFE_AMBIENTE"     $ambienteVal $envPath
+Write-EnvState "DFE_INSTALL_DIR"  $InstallDir  $envPath
+Log ("ENV state gravado em: {0}" -f $envPath)
+Write-Host "ENV state gravado em: $envPath"
 
 Write-Host "Instalacao finalizada."
 exit 0
