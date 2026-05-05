@@ -1424,16 +1424,30 @@ do_autoupdate() {
   echo "  2) Ativar - Toda segunda-feira as 01:00"
   echo "  3) Ativar - Personalizado (expressao cron)"
   echo "  4) Desativar auto-update"
-  echo "  5) Voltar"
+  echo "  5) Testar agora (forcar execucao)"
+  echo "  6) Voltar"
   echo ""
   local choice
-  read -rp "Escolha (1-5): " choice
+  read -rp "Escolha (1-6): " choice
   case "$choice" in
     1) _set_autoupdate_cron "0 1 * * *" "todo dia as 01:00";;
     2) _set_autoupdate_cron "0 1 * * 1" "toda segunda-feira as 01:00";;
     3) _set_autoupdate_cron_custom;;
     4) _remove_autoupdate_cron;;
-    5) return 0;;
+    5)
+      if [[ ! -f "$DFE_AUTOUPDATE_SCRIPT" ]]; then
+        log "Script nao encontrado. Gerando antes de testar..."
+        _write_autoupdate_script
+      fi
+      echo ""
+      echo "  Executando: $DFE_AUTOUPDATE_SCRIPT"
+      echo "  (saida em tempo real — log tambem em $DFE_AUTOUPDATE_LOG)"
+      echo "──────────────────────────────────────────────────────────"
+      bash "$DFE_AUTOUPDATE_SCRIPT" 2>&1 | tee -a "$DFE_AUTOUPDATE_LOG"
+      echo "──────────────────────────────────────────────────────────"
+      echo "  Execucao concluida."
+      ;;
+    6) return 0;;
     *) echo "Opcao invalida";;
   esac
 }

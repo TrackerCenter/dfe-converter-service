@@ -964,10 +964,11 @@ function Do-AutoUpdate {
     Write-Host "  2) Ativar - Toda segunda-feira as 01:00"
     Write-Host "  3) Ativar - Personalizado"
     Write-Host "  4) Desativar auto-update"
-    Write-Host "  5) Voltar"
+    Write-Host "  5) Testar agora (forcar execucao)"
+    Write-Host "  6) Voltar"
     Write-Host ""
 
-    $choice = Read-Host "Escolha (1-5)"
+    $choice = Read-Host "Escolha (1-6)"
     switch ($choice) {
         '1' {
             Write-AutoUpdateScript -InstallDir $installDir
@@ -1015,7 +1016,25 @@ function Do-AutoUpdate {
             }
             Write-Host "  Auto-update DESATIVADO." -ForegroundColor Green
         }
-        '5' { return }
+        '5' {
+            if (-not (Test-Path $DFE_AUTOUPDATE_SCRIPT)) {
+                Write-Host "  Script nao encontrado. Gerando antes de testar..." -ForegroundColor Yellow
+                Write-AutoUpdateScript -InstallDir $installDir
+            }
+            Write-Host ""
+            Write-Host "  Executando: $DFE_AUTOUPDATE_SCRIPT" -ForegroundColor Cyan
+            $logFile = Join-Path $installDir "dfe-autoupdate.log"
+            Write-Host "  (saida em tempo real — log tambem em $logFile)" -ForegroundColor DarkCyan
+            Write-Host ("─" * 60) -ForegroundColor DarkGray
+            try {
+                & powershell -NoProfile -ExecutionPolicy Bypass -File $DFE_AUTOUPDATE_SCRIPT 2>&1 | Tee-Object -FilePath $logFile -Append
+            } catch {
+                Write-Host "  ERRO durante execucao: $($_.Exception.Message)" -ForegroundColor Red
+            }
+            Write-Host ("─" * 60) -ForegroundColor DarkGray
+            Write-Host "  Execucao concluida." -ForegroundColor Green
+        }
+        '6' { return }
         default { Write-Host "  Opcao invalida." -ForegroundColor Red }
     }
 }
