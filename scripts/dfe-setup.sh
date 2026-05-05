@@ -236,9 +236,9 @@ _download_zulu_java() {
   echo "" >&2
 
   local yn
-  read -rp "Confirmar download? [S/n]: " yn >&2
+  read -rp "Confirmar download? [y/N]: " yn >&2
   case "${yn,,}" in
-    ''|s|y|yes|sim) ;;
+    y|yes|sim) ;;
     *) log "Download do Java cancelado." >&2; return 1;;
   esac
 
@@ -400,7 +400,7 @@ show_menu() {
 
   1) Instalar service
   2) Remover service
-  3) Reinstalar
+  3) Reinstalar service (manter JAR/config)
   4) Status do service
   5) Listar serviços dfe instalados
   6) Verificar atualização
@@ -453,8 +453,20 @@ do_list_services() {
     local unit_file="/etc/systemd/system/${svc}.service"
     if [[ -f "$unit_file" ]]; then
       local jar_path
-      jar_path="$(grep -o '\-jar [^ ]*' "$unit_file" 2>/dev/null | head -1 | cut -d' ' -f2 || true)"
+      jar_path="$(grep -o '\-jar [^ '"'"'\"]*' "$unit_file" 2>/dev/null | head -1 | cut -d' ' -f2 | tr -d '"'"'"'" || true)"
       [[ -n "$jar_path" ]] && install_dir="${jar_path%/*}"
+    fi
+
+    # Fallback: procurar state file nas instalações conhecidas que referenciam esse serviço
+    if [[ -z "$install_dir" ]]; then
+      while IFS= read -r dir; do
+        local svc_in_state
+        svc_in_state="$(grep '^DFE_SERVICE_NAME=' "${dir}/.dfe-setup.env" 2>/dev/null | cut -d'=' -f2- | sed 's/\.service$//' || true)"
+        if [[ "$svc_in_state" == "$svc" ]]; then
+          install_dir="$dir"
+          break
+        fi
+      done < <(_find_dfe_installations 2>/dev/null || true)
     fi
 
     # Versão do state file gerado pelo instalador
@@ -524,12 +536,15 @@ do_install() {
   printf "  Data     : %s\n"   "${remote_data:-?}"
   echo ""
 
-  # 2.1 Determinar diretório de instalação (mesmo default do dfe-install.sh)
-  local install_dir_target
+  # 2.1 Determinar diretório de instalação
+  local install_dir_default
   case "${install_ambiente^^}" in
-    PROD) install_dir_target="/opt/DFE_CONVERTER_PROD" ;;
-    *)    install_dir_target="/opt/DFE_CONVERTER_QA" ;;
+    PROD) install_dir_default="/opt/DFE_CONVERTER_PROD" ;;
+    *)    install_dir_default="/opt/DFE_CONVERTER_QA" ;;
   esac
+  local install_dir_target
+  read -rp "  Diretorio de instalacao [${install_dir_default}]: " install_dir_target
+  install_dir_target="${install_dir_target:-$install_dir_default}"
 
   # 2.2 Verificar se versão já instalada corresponde à disponível — evitar download desnecessário
   if [[ "$force_jar" != "force" && -n "$remote_versao" ]]; then
@@ -541,18 +556,18 @@ do_install() {
     if [[ -n "$installed_versao" && "$installed_versao" == "$remote_versao" ]]; then
       echo "  Versao instalada ($installed_versao) ja e a mais recente."
       local yn_force
-      read -rp "  Forcar reinstalacao do JAR mesmo assim? [s/N]: " yn_force
+      read -rp "  Forcar reinstalacao do JAR mesmo assim? [y/N]: " yn_force
       case "${yn_force,,}" in
-        s|y|yes|sim) ;;
+        y|yes|sim) ;;
         *) log "Operacao cancelada."; return 0;;
       esac
     fi
   fi
 
   local yn
-  read -rp "Prosseguir com a instalacao? [S/n]: " yn
+  read -rp "Prosseguir com a instalacao? [y/N]: " yn
   case "${yn,,}" in
-    ''|s|y|yes|sim) ;;
+    y|yes|sim) ;;
     *) log "Instalacao cancelada."; return 0;;
   esac
 
@@ -703,7 +718,109 @@ CONFIG_EOF
   return $rc
 }
 
-do_uninstall() {
+do_reinstall_service() {
+  ensure_api_url || return 1
+
+  # 1. Selecionar instalação existente
+  local install_dir
+  install_dir="$(_select_install_dir)" || return 1
+
+  local state_file="${install_dir}/.dfe-setup.env"
+  if [[ ! -f "$state_file" ]]; then
+    log "ERRO: state file nao encontrado em ${install_dir}"
+    return 1
+  fi
+
+  # 2. Ler estado atual
+  local svc_name jar_name cfg_name versao ambiente
+  svc_name="$(grep  '^DFE_SERVICE_NAME=' "$state_file" 2>/dev/null | cut -d'=' -f2- || true)"
+  jar_name="$(grep  '^DFE_JAR_NAME='     "$state_file" 2>/dev/null | cut -d'=' -f2- || true)"
+  cfg_name="$(grep  '^DFE_CONFIG_NAME='  "$state_file" 2>/dev/null | cut -d'=' -f2- || true)"
+  versao="$(grep    '^DFE_VERSAO='       "$state_file" 2>/dev/null | cut -d'=' -f2- || true)"
+  ambiente="$(grep  '^DFE_AMBIENTE='     "$state_file" 2>/dev/null | cut -d'=' -f2- || true)"
+
+  local jar_path="${install_dir}/${jar_name:-DFe-Converter.jar}"
+  local cfg_path="${install_dir}/${cfg_name:-config.properties}"
+
+  echo ""
+  echo "=========================================================="
+  echo "         REINSTALAR SERVICE (sem alterar JAR/config)"
+  echo "=========================================================="
+  echo ""
+  printf "  Servico      : %s\n" "${svc_name:-?}"
+  printf "  Instalado em : %s\n" "$install_dir"
+  printf "  Versao       : %s\n" "${versao:-?}"
+  printf "  Ambiente     : %s\n" "${ambiente:-?}"
+  printf "  JAR          : %s\n" "$jar_path"
+  printf "  Config       : %s\n" "$cfg_path"
+  echo ""
+
+  # 3. Verificar que os arquivos existem
+  local erros=0
+  if [[ ! -f "$jar_path" ]]; then
+    log "ERRO: JAR nao encontrado: ${jar_path}"
+    erros=1
+  fi
+  if [[ ! -f "$cfg_path" ]]; then
+    log "ERRO: config nao encontrado: ${cfg_path}"
+    erros=1
+  fi
+  [[ $erros -ne 0 ]] && return 1
+
+  local yn
+  read -rp "Reinstalar a unit systemd do servico? [y/N]: " yn
+  case "${yn,,}" in
+    y|yes|sim) ;;
+    *) log "Operacao cancelada."; return 0;;
+  esac
+
+  # 4. Baixar o instalador
+  local path
+  path="$(get_script "$INSTALL_SCRIPT_NAME")"
+  if [[ -z "$path" || ! -f "$path" ]]; then
+    log "ERRO: instalador nao encontrado"
+    return 1
+  fi
+
+  # 5. Reinstalar a unit usando o JAR e config existentes (--force recria unit/env sem perguntar)
+  echo ""
+  log "Reinstalando unit systemd..."
+  bash "$path" \
+    --jar-source  "$jar_path" \
+    --config-source "$cfg_path" \
+    --install-dir "$install_dir" \
+    --ambiente    "${ambiente:-QA}" \
+    --versao      "${versao:-}" \
+    --force \
+    --yes
+  local rc=$?
+
+  # 6. Restaurar JAVA_CMD se java embarcado disponível
+  if [[ $rc -eq 0 ]]; then
+    local java_home="${install_dir}/java"
+    local env_file="/etc/default/${svc_name%.service}"
+    if [[ -x "${java_home}/bin/java" && -f "$env_file" ]]; then
+      sed -i "s|^JAVA_CMD=.*|JAVA_CMD=${java_home}/bin/java|" "$env_file"
+      log "JAVA_CMD restaurado: ${java_home}/bin/java"
+      systemctl daemon-reload 2>/dev/null || true
+    fi
+
+    svc_name="${svc_name%.service}"
+    systemctl restart "${svc_name}.service" 2>/dev/null || true
+
+    echo ""
+    echo "=========================================================="
+    echo "           STATUS DO SERVICO APOS REINSTALACAO"
+    echo "=========================================================="
+    sleep 2
+    systemctl status "${svc_name}.service" --no-pager -l 2>/dev/null || true
+    echo ""
+  fi
+
+  return $rc
+}
+
+
   local path
   path="$(get_script "$UNINSTALL_SCRIPT_NAME")"
 
@@ -992,9 +1109,9 @@ do_update() {
     echo ""
     log "Nenhuma instalacao valida encontrada."
     local yn
-    read -rp "Deseja realizar a instalacao inicial agora? [S/n]: " yn
+    read -rp "Deseja realizar a instalacao inicial agora? [y/N]: " yn
     case "${yn,,}" in
-      ''|s|y|yes|sim) do_install; return $?;;
+      y|yes|sim) do_install; return $?;;
       *) return 0;;
     esac
   fi
@@ -1098,6 +1215,7 @@ set -o nounset
 TRACKER_API_URL="${TRACKER_API_URL}"
 DFE_AMBIENTE="${DFE_AMBIENTE}"
 UPDATE_URL="${RAW_BASE}/dfe-update.sh"
+STATE_URL="${RAW_BASE}/_state.sh"
 INSTALL_DIR="${AUTOUPDATE_INSTALL_DIR}"
 STATE_FILE="\${INSTALL_DIR}/.dfe-setup.env"
 REPORT_API_URL="\${TRACKER_API_URL}/api/v1/dfeConverterRelatorio"
@@ -1276,8 +1394,8 @@ _remove_autoupdate_cron() {
   crontab "$tmp_cron"
   rm -f "$tmp_cron"
   local remove_script
-  read -rp "Remover tambem o script ${DFE_AUTOUPDATE_SCRIPT}? [s/N]: " remove_script
-  if [[ "${remove_script,,}" == "s" ]]; then
+  read -rp "Remover tambem o script ${DFE_AUTOUPDATE_SCRIPT}? [y/N]: " remove_script
+  if [[ "${remove_script,,}" == "y" || "${remove_script,,}" == "yes" || "${remove_script,,}" == "sim" ]]; then
     rm -f "$DFE_AUTOUPDATE_SCRIPT"
     log "Script removido"
   fi
@@ -1346,13 +1464,7 @@ while true; do
       do_uninstall
       ;;
     3)
-      echo ""
-      log "REINSTALACAO"
-      log "Passo 1/2: Removendo..."
-      do_uninstall || true
-      echo ""
-      log "Passo 2/2: Instalando..."
-      do_install force
+      do_reinstall_service || true
       ;;
     4)
       do_status

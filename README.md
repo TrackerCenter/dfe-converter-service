@@ -17,8 +17,20 @@ sudo bash <(curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter
 
 ### Windows (PowerShell como Administrador)
 
+> ⚠️ **Antivírus (Kaspersky, Defender, etc.) pode bloquear `iex` executando conteúdo remoto diretamente da memória.**  
+> Use o padrão seguro: baixe o script para disco primeiro e então execute-o.
+
 ```powershell
-iex (iwr -useb https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup).Content
+# Baixar e executar (padrão seguro — não é bloqueado por antivírus)
+iwr -useb https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup `
+    -OutFile "$env:TEMP\dfe-setup.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\dfe-setup.ps1"
+```
+
+Ou em uma linha só:
+
+```powershell
+iwr -useb https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup -OutFile "$env:TEMP\dfe-setup.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\dfe-setup.ps1"
 ```
 
 > Os scripts são servidos diretamente pelo Tracker. Não é necessário instalar nada previamente — somente `curl` (Linux) ou acesso à internet (Windows).
@@ -36,25 +48,25 @@ Ao executar o setup, o seguinte menu é exibido:
 
   1) Instalar service
   2) Remover service
-  3) Reinstalar
+  3) Reinstalar service (manter EXE/config)
   4) Status do service
-  5) Listar serviços dfe instalados
-  6) Verificar atualização
-  7) Baixar e atualizar JAR
+  5) Listar servicos dfe instalados
+  6) Verificar atualizacao
+  7) Baixar e atualizar EXE
   8) Configurar auto-update
   9) Sair
 ```
 
 | Opção | Descrição | Documentação |
 |------:|-----------|:---:|
-| **1) Instalar service** | Baixa o executável (QA ou PROD), gera o `config.properties` interativamente e registra o serviço no systemd. | [→ Guia de Instalação](docs/instalacao.md) |
-| **2) Remover service** | Para e remove o serviço systemd e a pasta de instalação. | [→ Guia de Instalação](docs/instalacao.md#remover-service-opção-2) |
-| **3) Reinstalar** | Remove e reinstala o serviço (útil após trocar o JAR manualmente). | [→ Guia de Instalação](docs/instalacao.md#reinstalar-opção-3) |
-| **4) Status do service** | Lista todos os serviços `dfe-*` detectados e mostra o status systemd. | [→ Guia de Instalação](docs/instalacao.md#status-do-service-opção-4) |
+| **1) Instalar service** | Baixa o executável (QA ou PROD), gera o `config.properties` interativamente e registra o serviço no systemd/nssm. | [→ Guia de Instalação](docs/instalacao.md) |
+| **2) Remover service** | Para e remove o serviço e a pasta de instalação. | [→ Guia de Instalação](docs/instalacao.md#remover-service-opção-2) |
+| **3) Reinstalar service** | Recria apenas o serviço (systemd/nssm) sem tocar no EXE/JAR ou `config.properties`. | [→ Guia de Instalação](docs/instalacao.md#reinstalar-opção-3) |
+| **4) Status do service** | Lista todos os serviços `dfe-*` detectados e mostra o status. | [→ Guia de Instalação](docs/instalacao.md#status-do-service-opção-4) |
 | **5) Listar serviços** | Exibe todos os serviços `dfe-*` instalados com versão e diretório. | [→ Guia de Instalação](docs/instalacao.md#listar-serviços-opção-5) |
 | **6) Verificar atualização** | Consulta o servidor e exibe versões disponíveis (QA e PROD). Compara com a versão instalada. | [→ Guia de Atualização](docs/atualizacao.md) |
-| **7) Baixar e atualizar JAR** | Baixa e instala o JAR mais recente sobre uma instalação existente. | [→ Guia de Atualização](docs/atualizacao.md#baixar-e-atualizar-jar-opção-7) |
-| **8) Configurar auto-update** | Cria um script agendado via crontab para atualização automática. | [→ Guia de Atualização](docs/atualizacao.md#configurar-auto-update-opção-8) |
+| **7) Baixar e atualizar EXE** | Baixa e instala o executável mais recente sobre uma instalação existente. | [→ Guia de Atualização](docs/atualizacao.md#baixar-e-atualizar-jar-opção-7) |
+| **8) Configurar auto-update** | Cria um script agendado via cron (Linux) ou Task Scheduler (Windows) para atualização automática. | [→ Guia de Atualização](docs/atualizacao.md#configurar-auto-update-opção-8) |
 
 ---
 
