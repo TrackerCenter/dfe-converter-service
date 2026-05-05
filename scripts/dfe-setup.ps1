@@ -346,16 +346,37 @@ function Do-Install {
         }
     }
 
+    # Download EXE to install dir before calling installer
+    $downloadUrl  = "$($script:TrackerApiUrl)/api/v1/dfe-converter/versoes/latest/download?ambiente=$($script:DfeAmbiente)&tipo=EXE"
+    $exeDestPath  = Join-Path $installDir $remoteNome
     Write-Host ""
-    Write-Host "Baixando instalador..." -ForegroundColor Cyan
+    Write-Host "  Baixando $remoteNome..." -ForegroundColor Cyan
+    try {
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $exeDestPath -UseBasicParsing -ErrorAction Stop
+        Write-Host "  Download concluido: $exeDestPath" -ForegroundColor Green
+    } catch {
+        Write-Host "  ERRO ao baixar o executavel: $($_.Exception.Message)" -ForegroundColor Red
+        return
+    }
+
+    # Derive service/display name defaults from ambiente
+    $defaultSvcName  = if ($script:DfeAmbiente -eq "PROD") { "DFeConverterPROD" } else { "DFeConverterQA" }
+    $defaultDispName = if ($script:DfeAmbiente -eq "PROD") { "DF-e Converter PROD" } else { "DF-e Converter QA" }
+
+    Write-Host ""
+    Write-Host "  Configurando service..." -ForegroundColor Cyan
     $localInstall = Join-Path $ScriptDir $InstallScriptName
     if (Test-Path $localInstall) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $localInstall -InstallDir $installDir
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $localInstall `
+            -InstallDir $installDir -JarName $remoteNome -Ambiente $script:DfeAmbiente `
+            -ServiceName $defaultSvcName -DisplayName $defaultDispName -Versao $remoteVersao
     } else {
         $tempInstall = Download-ScriptToTemp -Name $InstallScriptName
         if (-not $tempInstall) { Write-Error "Falha ao baixar instalador"; return }
         try {
-            & powershell -NoProfile -ExecutionPolicy Bypass -File $tempInstall -InstallDir $installDir
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $tempInstall `
+                -InstallDir $installDir -JarName $remoteNome -Ambiente $script:DfeAmbiente `
+                -ServiceName $defaultSvcName -DisplayName $defaultDispName -Versao $remoteVersao
         } finally {
             if (Test-Path $tempInstall) { Remove-Item -Force $tempInstall -ErrorAction SilentlyContinue }
         }

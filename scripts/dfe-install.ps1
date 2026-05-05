@@ -3,10 +3,15 @@ dfe-install.ps1 - Instalador de service Windows (usa nssm se necessario).
 Execute em PowerShell ELEVADO no diretorio do instalador ou forneca -InstallDir.
 #>
 param(
-    [string]$InstallDir = $PSScriptRoot,
-    [string]$ConfigName = "config.properties",
-    [string]$Description = "J2R Consultoria - Conversao de documentos fiscais.",
-    [string]$NssmVersion = "2.24",
+    [string]$InstallDir   = $PSScriptRoot,
+    [string]$ConfigName   = "config.properties",
+    [string]$Description  = "J2R Consultoria - Conversao de documentos fiscais.",
+    [string]$NssmVersion  = "2.24",
+    [string]$JarName      = "",
+    [string]$Ambiente     = "",
+    [string]$ServiceName  = "",
+    [string]$DisplayName  = "",
+    [string]$Versao       = "",
     [switch]$EnableAppLogs
 )
 
@@ -48,34 +53,45 @@ function PromptWithDefault([string]$prompt, [string]$default) {
     if ([string]::IsNullOrWhiteSpace($r)) { return $default } else { return $r.Trim() }
 }
 
-$envChoice = Read-EnvChoice
+# When called from dfe-setup.ps1, all params are already provided — skip interactive prompts
+$paramsProvided = (-not [string]::IsNullOrWhiteSpace($JarName)) -and
+                  (-not [string]::IsNullOrWhiteSpace($Ambiente)) -and
+                  (-not [string]::IsNullOrWhiteSpace($ServiceName)) -and
+                  (-not [string]::IsNullOrWhiteSpace($DisplayName))
 
-if ($envChoice -eq 'QA') {
-    $defaultJar = "DFe-Converter-QA.exe"
-    $defaultService = "DFeConverterQA"
-    $defaultDisplay = "DF-e Converter QA"
-    Write-Host "Ambiente selecionado: QA"
-    $JarName = PromptWithDefault "Nome do JAR" $defaultJar
-    $ServiceName = PromptWithDefault "ServiceName (nome do servico Windows)" $defaultService
-    $DisplayName = PromptWithDefault "DisplayName (nome exibido em Services.msc)" $defaultDisplay
-}
-elseif ($envChoice -eq 'PROD') {
-    $defaultJar = "DFe-Converter-PROD.exe"
-    $defaultService = "DFeConverterPROD"
-    $defaultDisplay = "DF-e Converter PROD"
-    Write-Host "Ambiente selecionado: PROD"
-    $JarName = PromptWithDefault "Nome do JAR" $defaultJar
-    $ServiceName = PromptWithDefault "ServiceName (nome do servico Windows)" $defaultService
-    $DisplayName = PromptWithDefault "DisplayName (nome exibido em Services.msc)" $defaultDisplay
-}
-else {
-    Write-Host "Ambiente selecionado: Outro"
-    $JarName = Read-Host "Digite o nome do JAR (ex.: DFe-Converter-QA.jar)"
-    if ([string]::IsNullOrWhiteSpace($JarName)) { Write-Host "Nome do JAR obrigatorio.  Abortando. "; exit 2 }
-    $ServiceName = Read-Host "Digite o ServiceName (nome do servico Windows)"
-    if ([string]::IsNullOrWhiteSpace($ServiceName)) { Write-Host "ServiceName obrigatorio. Abortando."; exit 2 }
-    $DisplayName = Read-Host "Digite o DisplayName (nome exibido em Services.msc)"
-    if ([string]::IsNullOrWhiteSpace($DisplayName)) { Write-Host "DisplayName obrigatorio. Abortando."; exit 2 }
+if ($paramsProvided) {
+    $envChoice = $Ambiente.ToUpper()
+    Write-Host "Ambiente selecionado: $envChoice"
+} else {
+    $envChoice = Read-EnvChoice
+
+    if ($envChoice -eq 'QA') {
+        $defaultJar = "DFe-Converter-QA.exe"
+        $defaultService = "DFeConverterQA"
+        $defaultDisplay = "DF-e Converter QA"
+        Write-Host "Ambiente selecionado: QA"
+        $JarName     = PromptWithDefault "Nome do JAR" $defaultJar
+        $ServiceName = PromptWithDefault "ServiceName (nome do servico Windows)" $defaultService
+        $DisplayName = PromptWithDefault "DisplayName (nome exibido em Services.msc)" $defaultDisplay
+    }
+    elseif ($envChoice -eq 'PROD') {
+        $defaultJar = "DFe-Converter-PROD.exe"
+        $defaultService = "DFeConverterPROD"
+        $defaultDisplay = "DF-e Converter PROD"
+        Write-Host "Ambiente selecionado: PROD"
+        $JarName     = PromptWithDefault "Nome do JAR" $defaultJar
+        $ServiceName = PromptWithDefault "ServiceName (nome do servico Windows)" $defaultService
+        $DisplayName = PromptWithDefault "DisplayName (nome exibido em Services.msc)" $defaultDisplay
+    }
+    else {
+        Write-Host "Ambiente selecionado: Outro"
+        $JarName = Read-Host "Digite o nome do JAR (ex.: DFe-Converter-QA.jar)"
+        if ([string]::IsNullOrWhiteSpace($JarName)) { Write-Host "Nome do JAR obrigatorio.  Abortando. "; exit 2 }
+        $ServiceName = Read-Host "Digite o ServiceName (nome do servico Windows)"
+        if ([string]::IsNullOrWhiteSpace($ServiceName)) { Write-Host "ServiceName obrigatorio. Abortando."; exit 2 }
+        $DisplayName = Read-Host "Digite o DisplayName (nome exibido em Services.msc)"
+        if ([string]::IsNullOrWhiteSpace($DisplayName)) { Write-Host "DisplayName obrigatorio. Abortando."; exit 2 }
+    }
 }
 
 $javaExe = Join-Path $InstallDir "java\bin\java.exe"
@@ -301,7 +317,7 @@ $ambienteVal = if ($envChoice -eq 'PROD') { 'PROD' } elseif ($envChoice -eq 'QA'
 Write-EnvState "DFE_SERVICE_NAME" $ServiceName $envPath
 Write-EnvState "DFE_JAR_NAME"     $JarName     $envPath
 Write-EnvState "DFE_CONFIG_NAME"  $ConfigName  $envPath
-Write-EnvState "DFE_VERSAO"       ""           $envPath
+Write-EnvState "DFE_VERSAO"       $Versao      $envPath
 Write-EnvState "DFE_AMBIENTE"     $ambienteVal $envPath
 Write-EnvState "DFE_INSTALL_DIR"  $InstallDir  $envPath
 Log ("ENV state gravado em: {0}" -f $envPath)
