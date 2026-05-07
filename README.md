@@ -11,8 +11,22 @@ Scripts interativos para instalar, atualizar e gerenciar o serviço **DFe Conver
 
 ### Linux
 
+> ⚠️ **Não use `sudo bash <(curl ...)` — o `sudo` não herda o file descriptor criado pelo `<()` e causa `No such file or directory`.**
+
+Se já estiver como **root** (ex: `root@servidor`):
 ```bash
-sudo bash <(curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup)
+bash <(curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup)
+```
+
+Se precisar usar **sudo** (usuário comum), use pipe em vez de process substitution:
+```bash
+curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup | sudo bash
+```
+
+Ou salve o script em disco e execute:
+```bash
+curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup -o /tmp/dfe-setup.sh
+sudo bash /tmp/dfe-setup.sh
 ```
 
 ### Windows (PowerShell como Administrador)
