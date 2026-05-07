@@ -13,19 +13,36 @@ Scripts interativos para instalar, atualizar e gerenciar o serviço **DFe Conver
 
 > ⚠️ **Não use `sudo bash <(curl ...)` — o `sudo` não herda o file descriptor criado pelo `<()` e causa `No such file or directory`.**
 
+**QA** (versão mais recente — use para testes):
+
 Se já estiver como **root** (ex: `root@servidor`):
 ```bash
-bash <(curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup)
+bash <(curl -fsSL https://qa.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup)
 ```
 
-Se precisar usar **sudo** (usuário comum), use pipe em vez de process substitution:
+Se precisar usar **sudo** (usuário comum):
 ```bash
-curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup | sudo bash
+curl -fsSL https://qa.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup | sudo bash
 ```
 
-Ou salve o script em disco e execute:
+Ou salve o script em disco:
 ```bash
-curl -sSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup -o /tmp/dfe-setup.sh
+curl -fsSL https://qa.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup -o /tmp/dfe-setup.sh
+sudo bash /tmp/dfe-setup.sh
+```
+
+**PROD** (versão estável):
+
+```bash
+bash <(curl -fsSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup)
+```
+
+```bash
+curl -fsSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup | sudo bash
+```
+
+```bash
+curl -fsSL https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup -o /tmp/dfe-setup.sh
 sudo bash /tmp/dfe-setup.sh
 ```
 
@@ -34,17 +51,20 @@ sudo bash /tmp/dfe-setup.sh
 > ⚠️ **Antivírus (Kaspersky, Defender, etc.) pode bloquear `iex` executando conteúdo remoto diretamente da memória.**  
 > Use o padrão seguro: baixe o script para disco primeiro e então execute-o.
 
+**QA** (versão mais recente — use para testes):
+
 ```powershell
-# Baixar e executar (padrão seguro — não é bloqueado por antivírus)
-iwr -useb https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup `
+iwr -useb https://qa.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup `
     -OutFile "$env:TEMP\dfe-setup.ps1"
 powershell -ExecutionPolicy Bypass -File "$env:TEMP\dfe-setup.ps1"
 ```
 
-Ou em uma linha só:
+**PROD** (versão estável):
 
 ```powershell
-iwr -useb https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup -OutFile "$env:TEMP\dfe-setup.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\dfe-setup.ps1"
+iwr -useb https://prod.trackercenter.com.br/app/api/v1/dfe-converter/versoes/setup `
+    -OutFile "$env:TEMP\dfe-setup.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\dfe-setup.ps1"
 ```
 
 > Os scripts são servidos diretamente pelo Tracker. Não é necessário instalar nada previamente — somente `curl` (Linux) ou acesso à internet (Windows).
