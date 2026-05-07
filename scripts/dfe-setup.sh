@@ -1272,8 +1272,9 @@ _dl() {
 }
 tmpdir="\$(mktemp -d /tmp/dfe-update.XXXXXX)" || { log_au "ERRO: falha ao criar diretorio temporario"; exit 1; }
 UPDATE_RC=0
+_STATE_URL="\${STATE_URL:-\${UPDATE_URL%/dfe-update.sh}/_state.sh}"
 if _dl "\${UPDATE_URL}" "\${tmpdir}/dfe-update.sh" && \
-   _dl "\${STATE_URL}" "\${tmpdir}/_state.sh"; then
+   _dl "\${_STATE_URL}" "\${tmpdir}/_state.sh"; then
   chmod +x "\${tmpdir}/dfe-update.sh"
   set +o nounset
   bash "\${tmpdir}/dfe-update.sh" --api-url "\${TRACKER_API_URL}" --ambiente "\${DFE_AMBIENTE}" --install-dir "\${INSTALL_DIR}" --yes
