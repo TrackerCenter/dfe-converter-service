@@ -1024,14 +1024,14 @@ function Do-AutoUpdate {
             Write-Host ""
             Write-Host "  Executando: $DFE_AUTOUPDATE_SCRIPT" -ForegroundColor Cyan
             $logFile = Join-Path $installDir "dfe-autoupdate.log"
-            Write-Host "  (saida em tempo real — log tambem em $logFile)" -ForegroundColor DarkCyan
-            Write-Host ("─" * 60) -ForegroundColor DarkGray
+            Write-Host "  (saida em tempo real - log tambem em $logFile)" -ForegroundColor DarkCyan
+            Write-Host ("-" * 60) -ForegroundColor DarkGray
             try {
                 & powershell -NoProfile -ExecutionPolicy Bypass -File $DFE_AUTOUPDATE_SCRIPT 2>&1 | Tee-Object -FilePath $logFile -Append
             } catch {
                 Write-Host "  ERRO durante execucao: $($_.Exception.Message)" -ForegroundColor Red
             }
-            Write-Host ("─" * 60) -ForegroundColor DarkGray
+            Write-Host ("-" * 60) -ForegroundColor DarkGray
             Write-Host "  Execucao concluida." -ForegroundColor Green
         }
         '6' { return }
