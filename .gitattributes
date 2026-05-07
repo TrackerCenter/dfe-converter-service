@@ -1,0 +1,2 @@
+# Forca LF para scripts shell (Linux/bash) independente do SO do desenvolvedor
+scripts/*.sh text eol=lf

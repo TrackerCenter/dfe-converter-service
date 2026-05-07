@@ -6,7 +6,12 @@ set -o nounset
 set -o pipefail
 
 SCRIPT_VERSION="1.12.0"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+if [[ -n "$SCRIPT_SOURCE" && "$SCRIPT_SOURCE" != /dev/fd/* && "$SCRIPT_SOURCE" != /proc/self/fd/* ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+else
+  SCRIPT_DIR=""
+fi
 # RAW_BASE: quando servido pelo tracker-main, __TRACKER_BASE_URL__ é substituído
 # automaticamente pela URL do servidor. Fallback para GitHub se executado localmente.
 RAW_BASE="${DFESCRIPTS_RAW_BASE:-__TRACKER_BASE_URL__/api/v1/dfe-converter/versoes/setup/scripts/linux}"
@@ -362,9 +367,8 @@ download_script() {
 # Apenas o caminho é impresso no stdout; logs vão para stderr.
 get_script() {
   local name="$1"
-  local local_path="${SCRIPT_DIR}/${name}"
-
-  if [[ -f "$local_path" ]]; then
+  if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/${name}" ]]; then
+    local local_path="${SCRIPT_DIR}/${name}"
     log "Usando local: $local_path" >&2
     echo "$local_path"
     return 0
@@ -453,7 +457,7 @@ do_list_services() {
     local unit_file="/etc/systemd/system/${svc}.service"
     if [[ -f "$unit_file" ]]; then
       local jar_path
-      jar_path="$(grep -o '\-jar [^ '"'"'\"]*' "$unit_file" 2>/dev/null | head -1 | cut -d' ' -f2 | tr -d '"'"'"'" || true)"
+      jar_path="$(grep -o '\-jar [^ '"'"'\"]*' "$unit_file" 2>/dev/null | head -1 | cut -d' ' -f2 | tr -d "'\""  || true)"
       [[ -n "$jar_path" ]] && install_dir="${jar_path%/*}"
     fi
 
@@ -820,7 +824,7 @@ do_reinstall_service() {
   return $rc
 }
 
-
+do_uninstall() {
   local path
   path="$(get_script "$UNINSTALL_SCRIPT_NAME")"
 
