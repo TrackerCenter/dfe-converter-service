@@ -355,7 +355,17 @@ function Do-Install {
         Invoke-WebRequest -Uri $downloadUrl -OutFile $exeDestPath -UseBasicParsing -ErrorAction Stop
         Write-Host "  Download concluido: $exeDestPath" -ForegroundColor Green
     } catch {
-        Write-Host "  ERRO ao baixar o executavel: $($_.Exception.Message)" -ForegroundColor Red
+        $statusCode = $null
+        $responseBody = $null
+        try {
+            $statusCode = $_.Exception.Response.StatusCode.Value__
+            $stream = $_.Exception.Response.GetResponseStream()
+            $reader = [System.IO.StreamReader]::new($stream)
+            $responseBody = $reader.ReadToEnd()
+            $reader.Dispose()
+        } catch {}
+        Write-Host "  ERRO ao baixar o executavel: HTTP $statusCode - $($_.Exception.Message)" -ForegroundColor Red
+        if ($responseBody) { Write-Host "  Detalhe: $responseBody" -ForegroundColor Red }
         return
     }
 
