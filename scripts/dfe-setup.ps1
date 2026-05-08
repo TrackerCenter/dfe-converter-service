@@ -960,7 +960,7 @@ function Do-AutoUpdate {
 
     # Detect installation for autoupdate dir
     $installDir = Select-InstallDir
-    if ($null -eq $installDir) {
+    if ($null -eq $installDir -or -not [System.IO.Path]::IsPathRooted($installDir)) {
         Write-Host "  AVISO: Nenhuma instalacao valida encontrada. Usando diretorio padrao." -ForegroundColor Yellow
         $installDir = if ($script:DfeAmbiente -eq "PROD") { "C:\DFE_CONVERTER_PROD" } else { "C:\DFE_CONVERTER_QA" }
     }
@@ -1031,9 +1031,20 @@ function Do-AutoUpdate {
                 Write-Host "  Script nao encontrado. Gerando antes de testar..." -ForegroundColor Yellow
                 Write-AutoUpdateScript -InstallDir $installDir
             }
+            # Read log path from generated autoupdate script (reliable — avoids $installDir edge cases)
+            $logFile = $null
+            try {
+                $auLines = Get-Content $DFE_AUTOUPDATE_SCRIPT -ErrorAction SilentlyContinue
+                $auMatch = ($auLines | Where-Object { $_ -match '^\$LogFile\s*=' } | Select-Object -First 1) -replace '.*=\s*"([^"]*)".*', '$1'
+                if ($auMatch -and [System.IO.Path]::IsPathRooted($auMatch)) { $logFile = $auMatch }
+            } catch {}
+            if (-not $logFile) {
+                $safeDir = if ([System.IO.Path]::IsPathRooted($installDir)) { $installDir } `
+                           else { if ($script:DfeAmbiente -eq "PROD") { "C:\DFE_CONVERTER_PROD" } else { "C:\DFE_CONVERTER_QA" } }
+                $logFile = Join-Path $safeDir "dfe-autoupdate.log"
+            }
             Write-Host ""
             Write-Host "  Executando: $DFE_AUTOUPDATE_SCRIPT" -ForegroundColor Cyan
-            $logFile = Join-Path $installDir "dfe-autoupdate.log"
             Write-Host "  (saida em tempo real - log tambem em $logFile)" -ForegroundColor DarkCyan
             Write-Host ("-" * 60) -ForegroundColor DarkGray
             try {
